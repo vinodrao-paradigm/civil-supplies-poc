@@ -9,56 +9,100 @@ st.set_page_config(
 
 st.title("Civil Supplies AI Command Centre (PoC)")
 st.markdown("### Simulated AI-driven Fiscal Intelligence for AP Civil Supplies")
-st.write("VERSION: CHATBOT + CSV BUILD 1")
+st.write("VERSION: CHATBOT + CSV BUILD 2")
 
 st.markdown("---")
 
 # ---------- LOAD REAL DATA (DISTRICT-WISE) ----------
-# Make sure these CSV files are uploaded to the same GitHub repo as app.py
-# and update the column names below to match your files.
 FPS_CSV_PATH = "FPSReportDistrictWiseAsPerLatestRecord.csv"
 RC_CSV_PATH = "RCReportDistrictWise.csv"
-
-FPS_DISTRICT_COL = "District"   # change if your column name is different
-RC_DISTRICT_COL = "District"    # change if your column name is different
-FPS_COUNT_COL = "No_of_FPS"     # change if your column name is different
-RC_COUNT_COL = "Total_RC"       # change if your column name is different
 
 fps_df = None
 rc_df = None
 
 try:
     fps_df = pd.read_csv(FPS_CSV_PATH)
-except FileNotFoundError:
+except Exception:
     fps_df = None
 
 try:
     rc_df = pd.read_csv(RC_CSV_PATH)
-except FileNotFoundError:
+except Exception:
     rc_df = None
 
+# Mapping from UI-friendly district names to CSV State_Name_EN1 values
+DISTRICT_MAPPING = {
+    "All AP": None,
+    "Anantapur": "ANANTAPUR [553]",
+    "Chittoor": "CHITTOOR [554]",
+    "East Godavari": "EAST GODAVARI [545]",
+    "Guntur": "GUNTUR [548]",
+    "Krishna": "KRISHNA [547]",
+    "Kurnool": "KURNOOL [552]",
+    "Prakasam": "PRAKASAM [549]",
+    "SPSR Nellore": "SPSR NELLORE [550]",
+    "Srikakulam": "SRIKAKULAM [542]",
+    "Visakhapatnam": "VISAKHAPATANAM [544]",
+    "Vizianagaram": "VIZIANAGARAM [543]",
+    "West Godavari": "WEST GODAVARI [546]",
+    "YSR Kadapa": "Y.S.R. [551]",
+}
 
-def get_district_row(df, district_col, selected):
-    """Helper to get district row or aggregate for 'All AP'."""
-    if df is None:
-        return None
-    if selected == "All AP":
-        return df.select_dtypes(include="number").sum()
-    if district_col not in df.columns:
-        return None
-    row = df[df[district_col] == selected]
-    if row.empty:
-        return None
-    return row.iloc[0]
+# Real column names from your CSVs
+FPS_DISTRICT_COL = "State_Name_EN1"
+RC_DISTRICT_COL = "State_Name_EN1"
+FPS_COUNT_COL = "Textbox133"  # looks like total FPS
+RC_COUNT_COL = "TotalRC"      # total ration cards
+
+
+def _to_int(val):
+    """Convert strings like '2,352' or '11,34,699' to int safely."""
+    try:
+        s = str(val).replace(",", "").strip()
+        if s == "" or s.lower() == "nan":
+            return 0
+        return int(float(s))
+    except Exception:
+        return 0
+
+
+def get_totals_for_selection(csv_district_name):
+    """Return (total_fps, total_rc) for given CSV district name or all AP if None."""
+    total_fps = None
+    total_rc = None
+
+    # FPS side
+    if fps_df is not None and FPS_DISTRICT_COL in fps_df.columns and FPS_COUNT_COL in fps_df.columns:
+        if csv_district_name is None:
+            # All AP: sum across all real districts (exclude 'Total: 13' row)
+            mask = ~fps_df[FPS_DISTRICT_COL].astype(str).str.startswith("Total")
+            total_fps = sum(_to_int(v) for v in fps_df.loc[mask, FPS_COUNT_COL])
+        else:
+            row = fps_df[fps_df[FPS_DISTRICT_COL] == csv_district_name]
+            if not row.empty:
+                total_fps = _to_int(row.iloc[0][FPS_COUNT_COL])
+
+    # RC side
+    if rc_df is not None and RC_DISTRICT_COL in rc_df.columns and RC_COUNT_COL in rc_df.columns:
+        if csv_district_name is None:
+            mask = ~rc_df[RC_DISTRICT_COL].astype(str).str.startswith("Total")
+            total_rc = sum(_to_int(v) for v in rc_df.loc[mask, RC_COUNT_COL])
+        else:
+            row = rc_df[rc_df[RC_DISTRICT_COL] == csv_district_name]
+            if not row.empty:
+                total_rc = _to_int(row.iloc[0][RC_COUNT_COL])
+
+    return total_fps, total_rc
 
 
 # ---------- SIDEBAR: GLOBAL INPUTS ----------
 st.sidebar.header("Simulation Controls")
 
-district = st.sidebar.selectbox(
+district_label = st.sidebar.selectbox(
     "Select District",
-    ["All AP", "Srikakulam", "Vijayawada", "Visakhapatnam", "Tirupati"]
+    list(DISTRICT_MAPPING.keys())
 )
+csv_district_name = DISTRICT_MAPPING[district_label]
 
 leakage_dev = st.sidebar.slider(
     "Avg Truck Route Deviation (%)", 0, 50, 8
@@ -83,9 +127,7 @@ st.sidebar.caption(
     "CSVs are used only for FPS/RC aggregate counts."
 )
 
-# Get matching rows from CSVs for the selected district
-fps_row = get_district_row(fps_df, FPS_DISTRICT_COL, district)
-rc_row = get_district_row(rc_df, RC_DISTRICT_COL, district)
+total_fps, total_rc = get_totals_for_selection(csv_district_name)
 
 # ---------- TOP KPI CARDS (SIMULATED AI KPIs) ----------
 leakage_index = round(leakage_dev * 1.5, 1)
@@ -110,23 +152,23 @@ st.markdown("#### Real Data Snapshot (from latest FPS / RC reports)")
 
 colr1, colr2, colr3 = st.columns(3)
 
-if fps_row is not None and rc_row is not None:
-    try:
-        total_fps = int(fps_row[FPS_COUNT_COL])
-        total_rc = int(rc_row[RC_COUNT_COL])
-        colr1.metric("Total FPS in Selection", f"{total_fps:,}")
-        colr2.metric("Total Ration Cards", f"{total_rc:,}")
-        colr3.metric(
-            "Avg Cards per FPS",
-            f"{round(total_rc / total_fps, 1) if total_fps > 0 else '-'}"
-        )
-    except Exception as e:
-        colr1.write("⚠️ Unable to read FPS/RC counts from CSV. Check column names.")
-        colr2.write(str(e))
+if total_fps is not None and total_rc is not None:
+    colr1.metric(
+        "Total FPS in Selection",
+        f"{total_fps:,}" if isinstance(total_fps, int) else str(total_fps)
+    )
+    colr2.metric(
+        "Total Ration Cards",
+        f"{total_rc:,}" if isinstance(total_rc, int) else str(total_rc)
+    )
+    colr3.metric(
+        "Avg Cards per FPS",
+        f"{round(total_rc / total_fps, 1) if total_fps not in (None, 0) else '-'}"
+    )
 else:
     colr1.write(
-        "ℹ️ CSV data not available or district not found. "
-        "Check CSV upload and column names."
+        "ℹ️ FPS/RC CSVs not loaded or matching columns not found. "
+        "Check file paths and column names in the app."
     )
 
 st.markdown("---")
@@ -143,7 +185,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 
 # ---------- TAB 1: OVERVIEW ----------
 with tab1:
-    st.subheader(f"State Overview - {district}")
+    st.subheader(f"State Overview - {district_label}")
 
     col_a, col_b = st.columns([2, 1])
 
@@ -209,20 +251,20 @@ with tab1:
     st.markdown("#### District Data from CSV (if available)")
     if (
         fps_df is not None
-        and rc_df is not None
         and FPS_DISTRICT_COL in fps_df.columns
+        and rc_df is not None
         and RC_DISTRICT_COL in rc_df.columns
     ):
-        if district == "All AP":
+        if csv_district_name is None:
             st.write("Showing first few rows of FPS report:")
             st.dataframe(fps_df.head())
             st.write("Showing first few rows of RC report:")
             st.dataframe(rc_df.head())
         else:
             st.write("FPS Snapshot for selected district:")
-            st.dataframe(fps_df[fps_df[FPS_DISTRICT_COL] == district])
+            st.dataframe(fps_df[fps_df[FPS_DISTRICT_COL] == csv_district_name])
             st.write("Ration Card Snapshot for selected district:")
-            st.dataframe(rc_df[rc_df[RC_DISTRICT_COL] == district])
+            st.dataframe(rc_df[rc_df[RC_DISTRICT_COL] == csv_district_name])
     else:
         st.info(
             "FPS/RC CSVs not loaded or district columns not found. "
@@ -245,7 +287,7 @@ with tab2:
 
     with col_l2:
         st.markdown("##### Sample Route Alert")
-        st.write(f"**District:** {district}")
+        st.write(f"**District:** {district_label}")
         st.write("**Route ID:** MD-204")
         st.write(f"**Deviation Detected:** {leakage_dev}%")
         st.write(f"**AI Leakage Index:** {leakage_index}")
@@ -341,7 +383,6 @@ with tab5:
 with tab6:
     st.subheader("AI Assistant (Demo)")
 
-    # Clear chat button
     if st.button("🗑️ Clear Chat History"):
         st.session_state.chat_history = []
 
@@ -354,7 +395,6 @@ with tab6:
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    # Show previous messages
     for role, msg in st.session_state.chat_history:
         with st.chat_message(role):
             st.write(msg)
