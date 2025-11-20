@@ -231,3 +231,4 @@ with tab5:
             st.warning("System Action: Mark for manual review within 48 hours.")
         else:
             st.info("System Action: Log only, no immediate intervention.")
+col1, col2, col3, col4, col5 = st.columns(5)
