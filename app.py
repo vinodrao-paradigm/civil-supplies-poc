@@ -238,3 +238,47 @@ col2.metric("Ghost Beneficiary Loss (₹ Cr)", ghost_loss, f"{ghost_pct}% ghost"
 col3.metric("Quality Score", quality_score, quality_level)
 col4.metric("DBT Fraud Risk Score", fraud_risk, f"{dbt_anomalies} alerts/10k")
 col5.metric("Estimated Annual Savings (₹ Cr)", fiscal_savings, "Simulated")
+# ---------- TAB 6: SIMPLE DEMO CHATBOT (NO REAL AI) ----------
+with tab6:
+    st.subheader("AI Assistant (Demo)")
+
+    st.markdown("""
+    Ask questions about the Civil Supplies AI Command Centre.
+    This is a **simulated** assistant to show how an AI chatbot would work.
+    """)
+
+    # Store chat history in session_state so it remembers previous messages
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    # Display previous messages
+    for role, msg in st.session_state.chat_history:
+        with st.chat_message(role):
+            st.write(msg)
+
+    # Chat input box at the bottom
+    user_input = st.chat_input("Type your question here...")
+
+    if user_input:
+        # Show user message
+        st.session_state.chat_history.append(("user", user_input))
+        with st.chat_message("user"):
+            st.write(user_input)
+
+        # Very simple "fake AI" logic
+        # You can customize these if/else rules
+        if "leakage" in user_input.lower():
+            answer = "The system tracks truck routes, FPS withdrawals, and stock movement to compute a Leakage Index and raise alerts when routes deviate or stocks don’t match."
+        elif "ghost" in user_input.lower():
+            answer = "Ghost beneficiaries are detected by checking inactive ration cards, duplicate Aadhaar links, and suspicious usage patterns across districts."
+        elif "dbt" in user_input.lower():
+            answer = "DBT fraud is detected by looking for unusual transaction patterns, such as multiple withdrawals in a short time, or claims coming from different locations for the same beneficiary."
+        elif "quality" in user_input.lower():
+            answer = "Grain quality is monitored using image analysis and IoT sensors for temperature and humidity, so substandard or adulterated grain is flagged early."
+        else:
+            answer = "This demo chatbot gives only simple scripted answers. In the real system, an AI model would answer in detail using live data and documents."
+
+        # Show assistant answer
+        st.session_state.chat_history.append(("assistant", answer))
+        with st.chat_message("assistant"):
+            st.write(answer)
