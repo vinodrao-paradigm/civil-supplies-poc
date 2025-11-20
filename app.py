@@ -60,12 +60,13 @@ col5.metric("Estimated Annual Savings (₹ Cr)", fiscal_savings, "Simulated")
 st.markdown("---")
 
 # ---------- TABS FOR DIFFERENT MODULES ----------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Overview Dashboard",
     "Leakage & Movement",
     "Ghost Beneficiaries",
     "Field Staff & FPS",
-    "DBT Fraud Analytics"
+    "DBT Fraud Analytics",
+    "AI Chatbot"
 ])
 
 # ---------- TAB 1: OVERVIEW ----------
