@@ -309,4 +309,8 @@ with tab6:
         st.session_state.chat_history.append(("assistant", answer))
         with st.chat_message("assistant"):
             st.write(answer)
+st.subheader("AI Assistant (Demo)")
+# Clear chat button
+if st.button("🗑️ Clear Chat History"):
+    st.session_state.chat_history = []
 
