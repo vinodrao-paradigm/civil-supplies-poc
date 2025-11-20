@@ -203,24 +203,24 @@ with tab5:
             st.warning("Action: Send for manual review.")
         else:
             st.info("Action: Log only, no intervention.")
-
 # ---------- TAB 6: SIMPLE DEMO CHATBOT ----------
 with tab6:
     st.subheader("AI Assistant (Demo)")
 
     st.markdown("""
-    Ask questions about the Civil Supplies AI Command Centre.
-    This is a **simulated** chatbot with simple pre-set answers.
+    Ask questions about the Civil Supplies AI Command Centre, PDS leakages, DBT fraud detection, or how this PoC works.
+    This is a **simulated** chatbot with carefully prepared answers for the demo.
     """)
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
+    # Show previous messages
     for role, msg in st.session_state.chat_history:
         with st.chat_message(role):
             st.write(msg)
 
-    user_input = st.chat_input("Ask something about the Civil Supplies system...")
+    user_input = st.chat_input("Ask something about the Civil Supplies AI system...")
 
     if user_input:
         st.session_state.chat_history.append(("user", user_input))
@@ -229,17 +229,84 @@ with tab6:
 
         query = user_input.lower()
 
-        if "leakage" in query:
-            answer = "Leakage is detected by checking truck GPS deviation, FPS withdrawal anomalies, and stock mismatch."
-        elif "ghost" in query:
-            answer = "Ghost beneficiaries are detected using Aadhaar deduplication, inactivity checks, and pattern matching."
-        elif "dbt" in query:
-            answer = "DBT fraud is detected through unusual withdrawal bursts and cross-location usage patterns."
-        elif "quality" in query:
-            answer = "Quality is checked using AI-based visual inspection and warehouse temperature/humidity sensors."
+        # --- TOPIC-BASED CANNED ANSWERS ---
+
+        if "what is this" in query or "what does this system do" in query or "explain this system" in query:
+            answer = (
+                "This system is a Proof of Concept for an AI-enabled Civil Supplies Command Centre. "
+                "It shows how data from AePDS, ePoS, DBT, FPS inspections and quality checks can be combined into one dashboard, "
+                "so that leakages, ghost beneficiaries, and fraud can be detected early and acted on."
+            )
+
+        elif "minister" in query or "ias" in query or "secretary" in query:
+            answer = (
+                "For the Minister and senior IAS officers, this dashboard gives a top-down view: key KPIs like leakage index, "
+                "ghost beneficiary loss, DBT fraud risk, FPS uptime and estimated savings. "
+                "They can quickly see which districts are healthy, which are at risk, and what actions the system recommends."
+            )
+
+        elif "leakage" in query or "diversion" in query or "truck" in query or "route" in query:
+            answer = (
+                "Leakage is detected by monitoring truck GPS routes, stock movement and FPS withdrawals. "
+                "If a truck goes off its normal route or the stock issued at FPS does not match what was dispatched, "
+                "the AI raises a leakage alert with a risk score for that route or FPS."
+            )
+
+        elif "ghost" in query or "beneficiary" in query or "duplicate" in query:
+            answer = (
+                "Ghost beneficiaries are identified using Aadhaar deduplication, inactivity checks and cross-district pattern analysis. "
+                "The system looks for cards that are not used for many months, cards linked to the same Aadhaar or address, "
+                "and suspicious claims across multiple locations."
+            )
+
+        elif "dbt" in query or "fraud" in query or "payment" in query or "transaction" in query:
+            answer = (
+                "DBT fraud is detected by analysing transaction patterns. The system flags unusual withdrawal bursts, "
+                "multiple withdrawals from different locations for the same beneficiary, and amounts that do not match typical behaviour. "
+                "High-risk cases can be auto-frozen or sent for audit."
+            )
+
+        elif "quality" in query or "grain" in query or "fcI" in query or "warehouse" in query:
+            answer = (
+                'Grain quality is monitored using image-based inspection and simple IoT inputs from warehouses. '
+                "If colour, texture or moisture levels look abnormal, AI can flag a batch for manual inspection before it reaches beneficiaries."
+            )
+
+        elif "savings" in query or "money" in query or "roi" in query or "benefit" in query:
+            answer = (
+                "The PoC demonstrates how AI can reduce losses from leakage, ghost cards, and fraud. "
+                "By acting on these alerts, the department can save a significant portion of recurring losses each year, "
+                "while improving reliability and trust in the PDS system."
+            )
+
+        elif "data" in query or "source" in query or "where does data come" in query:
+            answer = (
+                "In the real system, the data would come from AePDS, ePoS devices, DBT payment systems, GPS trackers and warehouse systems. "
+                "In this PoC, all numbers are simulated to show the behaviour and experience without using any real government data."
+            )
+
+        elif "implementation" in query or "how will this be implemented" in query or "next steps" in query:
+            answer = (
+                "This PoC is the first step. Once approved, the next phases would include: connecting to real data sources via APIs, "
+                "fine-tuning AI models on Andhra Pradesh data, and rolling out the dashboards for pilot districts before statewide scaling."
+            )
+
+        elif "dashboard" in query or "screen" in query or "tab" in query:
+            answer = (
+                "The dashboard is organised into tabs: an overview for leadership, and separate views for leakage, ghost beneficiaries, "
+                "field staff/FPS monitoring and DBT fraud analytics. Each tab shows KPIs, trends, and example alerts to demonstrate how AI supports decisions."
+            )
+
         else:
-            answer = "This is a demo chatbot. The real version will use an AI model to answer intelligently."
+            # More helpful default answer
+            answer = (
+                "This PoC chatbot is using prepared answers, not a live AI model. "
+                "I couldn't match your exact question to a topic, but in simple terms: this system is designed to "
+                "reduce leakage, clean up beneficiary data, detect DBT fraud and improve FPS performance using AI-driven analytics. "
+                "You can try asking about leakage, ghost beneficiaries, DBT fraud, grain quality, data sources or how this helps the Minister."
+            )
 
         st.session_state.chat_history.append(("assistant", answer))
         with st.chat_message("assistant"):
             st.write(answer)
+
