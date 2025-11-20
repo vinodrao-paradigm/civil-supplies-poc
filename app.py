@@ -9,8 +9,48 @@ st.set_page_config(
 
 st.title("Civil Supplies AI Command Centre (PoC)")
 st.markdown("### Simulated AI-driven Fiscal Intelligence for AP Civil Supplies")
+st.write("VERSION: CHATBOT + CSV BUILD 1")
 
 st.markdown("---")
+
+# ---------- LOAD REAL DATA (DISTRICT-WISE) ----------
+# Make sure these CSV files are uploaded to the same GitHub repo as app.py
+# and update the column names below to match your files.
+FPS_CSV_PATH = "FPSReportDistrictWiseAsPerLatestRecord.csv"
+RC_CSV_PATH = "RCReportDistrictWise.csv"
+
+FPS_DISTRICT_COL = "District"   # change if your column name is different
+RC_DISTRICT_COL = "District"    # change if your column name is different
+FPS_COUNT_COL = "No_of_FPS"     # change if your column name is different
+RC_COUNT_COL = "Total_RC"       # change if your column name is different
+
+fps_df = None
+rc_df = None
+
+try:
+    fps_df = pd.read_csv(FPS_CSV_PATH)
+except FileNotFoundError:
+    fps_df = None
+
+try:
+    rc_df = pd.read_csv(RC_CSV_PATH)
+except FileNotFoundError:
+    rc_df = None
+
+
+def get_district_row(df, district_col, selected):
+    """Helper to get district row or aggregate for 'All AP'."""
+    if df is None:
+        return None
+    if selected == "All AP":
+        return df.select_dtypes(include="number").sum()
+    if district_col not in df.columns:
+        return None
+    row = df[df[district_col] == selected]
+    if row.empty:
+        return None
+    return row.iloc[0]
+
 
 # ---------- SIDEBAR: GLOBAL INPUTS ----------
 st.sidebar.header("Simulation Controls")
@@ -38,14 +78,24 @@ quality_level = st.sidebar.selectbox(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.caption("All numbers are simulated for PoC demo")
+st.sidebar.caption(
+    "Risk scores below are simulated for PoC demo. "
+    "CSVs are used only for FPS/RC aggregate counts."
+)
 
-# ---------- TOP KPI CARDS ----------
+# Get matching rows from CSVs for the selected district
+fps_row = get_district_row(fps_df, FPS_DISTRICT_COL, district)
+rc_row = get_district_row(rc_df, RC_DISTRICT_COL, district)
+
+# ---------- TOP KPI CARDS (SIMULATED AI KPIs) ----------
 leakage_index = round(leakage_dev * 1.5, 1)
 ghost_loss = ghost_pct * 3   # in ₹ Crore
 quality_score = 95 if quality_level == "Good" else (78 if quality_level == "Mixed" else 60)
 fraud_risk = round(dbt_anomalies / 5, 1)
-fiscal_savings = max(0, round(750 - (leakage_index + ghost_loss + (100-quality_score) + fraud_risk), 1))
+fiscal_savings = max(
+    0,
+    round(750 - (leakage_index + ghost_loss + (100 - quality_score) + fraud_risk), 1)
+)
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -54,6 +104,30 @@ col2.metric("Ghost Beneficiary Loss (₹ Cr)", ghost_loss, f"{ghost_pct}% ghost"
 col3.metric("Quality Score", quality_score, quality_level)
 col4.metric("DBT Fraud Risk Score", fraud_risk, f"{dbt_anomalies} alerts/10k")
 col5.metric("Estimated Annual Savings (₹ Cr)", fiscal_savings, "Simulated")
+
+# ---------- REAL DATA SNAPSHOT FROM CSV ----------
+st.markdown("#### Real Data Snapshot (from latest FPS / RC reports)")
+
+colr1, colr2, colr3 = st.columns(3)
+
+if fps_row is not None and rc_row is not None:
+    try:
+        total_fps = int(fps_row[FPS_COUNT_COL])
+        total_rc = int(rc_row[RC_COUNT_COL])
+        colr1.metric("Total FPS in Selection", f"{total_fps:,}")
+        colr2.metric("Total Ration Cards", f"{total_rc:,}")
+        colr3.metric(
+            "Avg Cards per FPS",
+            f"{round(total_rc / total_fps, 1) if total_fps > 0 else '-'}"
+        )
+    except Exception as e:
+        colr1.write("⚠️ Unable to read FPS/RC counts from CSV. Check column names.")
+        colr2.write(str(e))
+else:
+    colr1.write(
+        "ℹ️ CSV data not available or district not found. "
+        "Check CSV upload and column names."
+    )
 
 st.markdown("---")
 
@@ -77,8 +151,22 @@ with tab1:
         st.markdown("#### Trend of Risk Scores (Simulated)")
         trend_df = pd.DataFrame({
             "Month": ["Apr", "May", "Jun", "Jul", "Aug", "Sep"],
-            "Leakage Index": [40, 38, 35, leakage_index + 2, leakage_index, max(leakage_index - 3, 10)],
-            "Fraud Risk": [30, 28, 25, fraud_risk + 3, fraud_risk, max(fraud_risk - 4, 5)]
+            "Leakage Index": [
+                40,
+                38,
+                35,
+                leakage_index + 2,
+                leakage_index,
+                max(leakage_index - 3, 10),
+            ],
+            "Fraud Risk": [
+                30,
+                28,
+                25,
+                fraud_risk + 3,
+                fraud_risk,
+                max(fraud_risk - 4, 5),
+            ],
         }).set_index("Month")
         st.line_chart(trend_df)
 
@@ -107,6 +195,40 @@ with tab1:
     st.write("- 🚨 **DBT burst pattern** detected in Tirupati cluster (₹1.2 Cr risk).")
     st.write("- ✅ **Quality checks cleared** for latest FCI shipment to Visakhapatnam.")
 
+    st.markdown("#### What this PoC represents in the full AI solution")
+    with st.expander("Click to expand explanation for Minister / IAS"):
+        st.markdown(
+            "- This PoC demonstrates five AI modules: Leakage detection, Ghost beneficiary cleanup, "
+            "FPS/field staff monitoring, DBT fraud analytics, and quality checks.\n"
+            "- In production, it would run on live data from AePDS, ePoS, DBT systems, GPS and warehouse "
+            "systems instead of simulated sliders.\n"
+            "- The goal is to reduce losses from leakage, ineligible beneficiaries and fraud, and to improve "
+            "reliability and transparency in the PDS."
+        )
+
+    st.markdown("#### District Data from CSV (if available)")
+    if (
+        fps_df is not None
+        and rc_df is not None
+        and FPS_DISTRICT_COL in fps_df.columns
+        and RC_DISTRICT_COL in rc_df.columns
+    ):
+        if district == "All AP":
+            st.write("Showing first few rows of FPS report:")
+            st.dataframe(fps_df.head())
+            st.write("Showing first few rows of RC report:")
+            st.dataframe(rc_df.head())
+        else:
+            st.write("FPS Snapshot for selected district:")
+            st.dataframe(fps_df[fps_df[FPS_DISTRICT_COL] == district])
+            st.write("Ration Card Snapshot for selected district:")
+            st.dataframe(rc_df[rc_df[RC_DISTRICT_COL] == district])
+    else:
+        st.info(
+            "FPS/RC CSVs not loaded or district columns not found. "
+            "Check file paths and column names at the top of app.py."
+        )
+
 # ---------- TAB 2: LEAKAGE & MOVEMENT ----------
 with tab2:
     st.subheader("AI Module: Supply Chain Leakage Anomaly Detection")
@@ -117,7 +239,7 @@ with tab2:
         st.markdown("##### Route Deviation vs Alert Level")
         route_df = pd.DataFrame({
             "Route Deviation (%)": [0, 5, 10, 15, 20, leakage_dev],
-            "Alert Score": [0, 10, 30, 50, 70, leakage_index]
+            "Alert Score": [0, 10, 30, 50, 70, leakage_index],
         })
         st.bar_chart(route_df, x="Route Deviation (%)", y="Alert Score")
 
@@ -129,7 +251,10 @@ with tab2:
         st.write(f"**AI Leakage Index:** {leakage_index}")
 
         if leakage_index > 50:
-            st.error("Action Recommended: Immediately contact Enforcement Cell and freeze FPS withdrawals.")
+            st.error(
+                "Action Recommended: Immediately contact Enforcement Cell "
+                "and freeze FPS withdrawals."
+            )
         else:
             st.info("Action: Monitor this route and schedule surprise inspection.")
 
@@ -140,10 +265,10 @@ with tab3:
     col_g1, col_g2 = st.columns(2)
 
     with col_g1:
-        st.markdown("##### Ghost % vs Fiscal Loss")
+        st.markdown("##### Ghost % vs Fiscal Loss (Simulated)")
         ghost_df = pd.DataFrame({
             "Ghost %": list(range(0, 21, 5)) + [ghost_pct],
-            "Loss (₹ Cr)": [x * 3 for x in range(0, 21, 5)] + [ghost_loss]
+            "Loss (₹ Cr)": [x * 3 for x in range(0, 21, 5)] + [ghost_loss],
         })
         st.area_chart(ghost_df, x="Ghost %", y="Loss (₹ Cr)")
 
@@ -151,7 +276,9 @@ with tab3:
         st.markdown("##### Current Cleanup Simulation")
         st.write(f"Ghost Cards: **{ghost_pct}%**")
         st.write(f"Estimated Loss: **₹{ghost_loss} Cr**")
-        st.success(f"AI Cleanup Savings (~70%): **₹{round(ghost_loss * 0.7, 1)} Cr/year**")
+        st.success(
+            f"AI Cleanup Savings (~70%): **₹{round(ghost_loss * 0.7, 1)} Cr/year**"
+        )
 
 # ---------- TAB 4: FIELD STAFF & FPS ----------
 with tab4:
@@ -163,15 +290,21 @@ with tab4:
     col_f1, col_f2 = st.columns(2)
 
     with col_f1:
-        st.markdown("##### Inspector Visit Compliance")
+        st.markdown("##### Inspector Visit Compliance (Simulated)")
         st.metric("Visits Completed", f"{visits_completed}", f"out of {visits_planned}")
-        st.metric("Compliance Rate", f"{int((visits_completed/visits_planned)*100)}%")
+        st.metric(
+            "Compliance Rate",
+            f"{int((visits_completed / visits_planned) * 100)}%",
+        )
 
     with col_f2:
         st.markdown("##### Simple Visit Log (Demo)")
         inspector_name = st.text_input("Inspector Name", "Ravi Kumar")
         fps_code = st.text_input("FPS Code", "FPS-1039")
-        issue_flag = st.selectbox("Any Issue Observed?", ["No Issue", "Stock Mismatch", "Device Offline", "Suspected Diversion"])
+        issue_flag = st.selectbox(
+            "Any Issue Observed?",
+            ["No Issue", "Stock Mismatch", "Device Offline", "Suspected Diversion"],
+        )
 
         if st.button("Submit Visit Log (Simulated)"):
             st.success(f"Visit recorded for {fps_code}. Issue: {issue_flag}")
@@ -183,15 +316,15 @@ with tab5:
     col_d1, col_d2 = st.columns(2)
 
     with col_d1:
-        st.markdown("##### DBT Anomalies vs Risk Score")
+        st.markdown("##### DBT Anomalies vs Risk Score (Simulated)")
         fraud_df = pd.DataFrame({
             "Anomalies per 10k txns": [0, 50, 100, 200, 300, dbt_anomalies],
-            "Risk Score": [0, 20, 40, 60, 80, fraud_risk]
+            "Risk Score": [0, 20, 40, 60, 80, fraud_risk],
         })
         st.line_chart(fraud_df, x="Anomalies per 10k txns", y="Risk Score")
 
     with col_d2:
-        st.markdown("##### Sample Fraud Case")
+        st.markdown("##### Sample Fraud Case (Simulated)")
         st.write("**Scheme:** Rice Subsidy DBT")
         st.write("**Beneficiary ID:** BEN-98234")
         st.write("**Pattern:** Multiple withdrawals in 3 districts within 24 hours")
@@ -203,14 +336,20 @@ with tab5:
             st.warning("Action: Send for manual review.")
         else:
             st.info("Action: Log only, no intervention.")
+
 # ---------- TAB 6: SIMPLE DEMO CHATBOT ----------
 with tab6:
     st.subheader("AI Assistant (Demo)")
 
-    st.markdown("""
-    Ask questions about the Civil Supplies AI Command Centre, PDS leakages, DBT fraud detection, or how this PoC works.
-    This is a **simulated** chatbot with carefully prepared answers for the demo.
-    """)
+    # Clear chat button
+    if st.button("🗑️ Clear Chat History"):
+        st.session_state.chat_history = []
+
+    st.markdown(
+        "Ask questions about the Civil Supplies AI Command Centre, PDS leakages, "
+        "DBT fraud detection, or how this PoC works. "
+        "This is a simulated chatbot with prepared answers for the demo."
+    )
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -229,88 +368,70 @@ with tab6:
 
         query = user_input.lower()
 
-        # --- TOPIC-BASED CANNED ANSWERS ---
-
-        if "what is this" in query or "what does this system do" in query or "explain this system" in query:
+        if "what is this" in query or "what does this system do" in query or "explain this" in query:
             answer = (
                 "This system is a Proof of Concept for an AI-enabled Civil Supplies Command Centre. "
-                "It shows how data from AePDS, ePoS, DBT, FPS inspections and quality checks can be combined into one dashboard, "
-                "so that leakages, ghost beneficiaries, and fraud can be detected early and acted on."
+                "It shows how data from AePDS, ePoS, DBT, FPS inspections and quality checks can be combined into one dashboard "
+                "so that leakages, ghost beneficiaries and fraud can be detected early and acted on."
             )
-
         elif "minister" in query or "ias" in query or "secretary" in query:
             answer = (
                 "For the Minister and senior IAS officers, this dashboard gives a top-down view: key KPIs like leakage index, "
                 "ghost beneficiary loss, DBT fraud risk, FPS uptime and estimated savings. "
-                "They can quickly see which districts are healthy, which are at risk, and what actions the system recommends."
+                "They can quickly see which districts are healthy, which are at risk and what actions the system recommends."
             )
-
         elif "leakage" in query or "diversion" in query or "truck" in query or "route" in query:
             answer = (
                 "Leakage is detected by monitoring truck GPS routes, stock movement and FPS withdrawals. "
                 "If a truck goes off its normal route or the stock issued at FPS does not match what was dispatched, "
                 "the AI raises a leakage alert with a risk score for that route or FPS."
             )
-
         elif "ghost" in query or "beneficiary" in query or "duplicate" in query:
             answer = (
                 "Ghost beneficiaries are identified using Aadhaar deduplication, inactivity checks and cross-district pattern analysis. "
                 "The system looks for cards that are not used for many months, cards linked to the same Aadhaar or address, "
                 "and suspicious claims across multiple locations."
             )
-
         elif "dbt" in query or "fraud" in query or "payment" in query or "transaction" in query:
             answer = (
                 "DBT fraud is detected by analysing transaction patterns. The system flags unusual withdrawal bursts, "
-                "multiple withdrawals from different locations for the same beneficiary, and amounts that do not match typical behaviour. "
+                "multiple withdrawals from different locations for the same beneficiary and amounts that do not match typical behaviour. "
                 "High-risk cases can be auto-frozen or sent for audit."
             )
-
-        elif "quality" in query or "grain" in query or "fcI" in query or "warehouse" in query:
+        elif "quality" in query or "grain" in query or "fci" in query or "warehouse" in query:
             answer = (
-                'Grain quality is monitored using image-based inspection and simple IoT inputs from warehouses. '
+                "Grain quality is monitored using image-based inspection and simple IoT inputs from warehouses. "
                 "If colour, texture or moisture levels look abnormal, AI can flag a batch for manual inspection before it reaches beneficiaries."
             )
-
         elif "savings" in query or "money" in query or "roi" in query or "benefit" in query:
             answer = (
-                "The PoC demonstrates how AI can reduce losses from leakage, ghost cards, and fraud. "
+                "The PoC demonstrates how AI can reduce losses from leakage, ghost cards and fraud. "
                 "By acting on these alerts, the department can save a significant portion of recurring losses each year, "
                 "while improving reliability and trust in the PDS system."
             )
-
         elif "data" in query or "source" in query or "where does data come" in query:
             answer = (
                 "In the real system, the data would come from AePDS, ePoS devices, DBT payment systems, GPS trackers and warehouse systems. "
-                "In this PoC, all numbers are simulated to show the behaviour and experience without using any real government data."
+                "In this PoC, all risk scores are simulated to show the behaviour without using any real beneficiary data."
             )
-
         elif "implementation" in query or "how will this be implemented" in query or "next steps" in query:
             answer = (
-                "This PoC is the first step. Once approved, the next phases would include: connecting to real data sources via APIs, "
-                "fine-tuning AI models on Andhra Pradesh data, and rolling out the dashboards for pilot districts before statewide scaling."
+                "This PoC is the first step. Once approved, the next phases would include connecting to real data sources via APIs, "
+                "fine-tuning AI models on Andhra Pradesh data and rolling out the dashboards in pilot districts before statewide scaling."
             )
-
         elif "dashboard" in query or "screen" in query or "tab" in query:
             answer = (
-                "The dashboard is organised into tabs: an overview for leadership, and separate views for leakage, ghost beneficiaries, "
-                "field staff/FPS monitoring and DBT fraud analytics. Each tab shows KPIs, trends, and example alerts to demonstrate how AI supports decisions."
+                "The dashboard is organised into tabs: an overview for leadership and separate views for leakage, ghost beneficiaries, "
+                "field staff/FPS monitoring and DBT fraud analytics. Each tab shows KPIs, trends and example alerts to demonstrate how AI supports decisions."
             )
-
         else:
-            # More helpful default answer
             answer = (
                 "This PoC chatbot is using prepared answers, not a live AI model. "
-                "I couldn't match your exact question to a topic, but in simple terms: this system is designed to "
-                "reduce leakage, clean up beneficiary data, detect DBT fraud and improve FPS performance using AI-driven analytics. "
-                "You can try asking about leakage, ghost beneficiaries, DBT fraud, grain quality, data sources or how this helps the Minister."
+                "In simple terms, the system is designed to reduce leakage, clean up beneficiary data, detect DBT fraud and improve FPS performance "
+                "using AI-driven analytics. You can ask about leakage, ghost beneficiaries, DBT fraud, grain quality, data sources "
+                "or how this helps the Minister."
             )
 
         st.session_state.chat_history.append(("assistant", answer))
         with st.chat_message("assistant"):
             st.write(answer)
-st.subheader("AI Assistant (Demo)")
-# Clear chat button
-if st.button("🗑️ Clear Chat History"):
-    st.session_state.chat_history = []
-
