@@ -233,3 +233,8 @@ with tab5:
             st.info("System Action: Log only, no immediate intervention.")
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Leakage Index", leakage_index, f"{leakage_dev}% deviation")
+col1.metric("Leakage Index", leakage_index, f"{leakage_dev}% deviation")
+col2.metric("Ghost Beneficiary Loss (₹ Cr)", ghost_loss, f"{ghost_pct}% ghost")
+col3.metric("Quality Score", quality_score, quality_level)
+col4.metric("DBT Fraud Risk Score", fraud_risk, f"{dbt_anomalies} alerts/10k")
+col5.metric("Estimated Annual Savings (₹ Cr)", fiscal_savings, "Simulated")
