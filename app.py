@@ -232,3 +232,4 @@ with tab5:
         else:
             st.info("System Action: Log only, no immediate intervention.")
 col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("Leakage Index", leakage_index, f"{leakage_dev}% deviation")
