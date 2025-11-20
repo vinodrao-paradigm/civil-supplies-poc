@@ -41,8 +41,6 @@ st.sidebar.markdown("---")
 st.sidebar.caption("All numbers are simulated for PoC demo")
 
 # ---------- TOP KPI CARDS ----------
-# We convert the raw slider values into simple "AI style" KPIs
-
 leakage_index = round(leakage_dev * 1.5, 1)
 ghost_loss = ghost_pct * 3   # in ₹ Crore
 quality_score = 95 if quality_level == "Good" else (78 if quality_level == "Mixed" else 60)
@@ -65,4 +63,183 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Leakage & Movement",
     "Ghost Beneficiaries",
     "Field Staff & FPS",
-    "DBT Fraud
+    "DBT Fraud Analytics",
+    "AI Chatbot"
+])
+
+# ---------- TAB 1: OVERVIEW ----------
+with tab1:
+    st.subheader(f"State Overview - {district}")
+
+    col_a, col_b = st.columns([2, 1])
+
+    with col_a:
+        st.markdown("#### Trend of Risk Scores (Simulated)")
+        trend_df = pd.DataFrame({
+            "Month": ["Apr", "May", "Jun", "Jul", "Aug", "Sep"],
+            "Leakage Index": [40, 38, 35, leakage_index + 2, leakage_index, max(leakage_index - 3, 10)],
+            "Fraud Risk": [30, 28, 25, fraud_risk + 3, fraud_risk, max(fraud_risk - 4, 5)]
+        }).set_index("Month")
+        st.line_chart(trend_df)
+
+    with col_b:
+        st.markdown("#### Quick Health Snapshot")
+        st.progress(fps_uptime / 100.0)
+        st.write(f"FPS Uptime: **{fps_uptime}%**")
+
+        if leakage_index > 50:
+            st.error("High Leakage Risk Detected in Supply Chain")
+        elif leakage_index > 30:
+            st.warning("Moderate Leakage Risk – Needs Monitoring")
+        else:
+            st.success("Leakage Under Control")
+
+        if fraud_risk > 60:
+            st.error("DBT Fraud Risk is CRITICAL")
+        elif fraud_risk > 30:
+            st.warning("DBT Fraud Risk is ELEVATED")
+        else:
+            st.success("DBT Fraud Risk is NORMAL")
+
+    st.markdown("#### AI Alert Feed (Simulated)")
+    st.write("- 🚨 **Truck diversion suspected** on Route VJA-123 (off-route by 12 km).")
+    st.write("- ⚠️ **5,432 ghost cards** flagged in last monthly Aadhaar sync.")
+    st.write("- 🚨 **DBT burst pattern** detected in Tirupati cluster (₹1.2 Cr risk).")
+    st.write("- ✅ **Quality checks cleared** for latest FCI shipment to Visakhapatnam.")
+
+# ---------- TAB 2: LEAKAGE & MOVEMENT ----------
+with tab2:
+    st.subheader("AI Module: Supply Chain Leakage Anomaly Detection")
+
+    col_l1, col_l2 = st.columns(2)
+
+    with col_l1:
+        st.markdown("##### Route Deviation vs Alert Level")
+        route_df = pd.DataFrame({
+            "Route Deviation (%)": [0, 5, 10, 15, 20, leakage_dev],
+            "Alert Score": [0, 10, 30, 50, 70, leakage_index]
+        })
+        st.bar_chart(route_df, x="Route Deviation (%)", y="Alert Score")
+
+    with col_l2:
+        st.markdown("##### Sample Route Alert")
+        st.write(f"**District:** {district}")
+        st.write("**Route ID:** MD-204")
+        st.write(f"**Deviation Detected:** {leakage_dev}%")
+        st.write(f"**AI Leakage Index:** {leakage_index}")
+
+        if leakage_index > 50:
+            st.error("Action Recommended: Immediately contact Enforcement Cell and freeze FPS withdrawals.")
+        else:
+            st.info("Action: Monitor this route and schedule surprise inspection.")
+
+# ---------- TAB 3: GHOST BENEFICIARIES ----------
+with tab3:
+    st.subheader("AI Module: Ghost Beneficiary Cleanup")
+
+    col_g1, col_g2 = st.columns(2)
+
+    with col_g1:
+        st.markdown("##### Ghost % vs Fiscal Loss")
+        ghost_df = pd.DataFrame({
+            "Ghost %": list(range(0, 21, 5)) + [ghost_pct],
+            "Loss (₹ Cr)": [x * 3 for x in range(0, 21, 5)] + [ghost_loss]
+        })
+        st.area_chart(ghost_df, x="Ghost %", y="Loss (₹ Cr)")
+
+    with col_g2:
+        st.markdown("##### Current Cleanup Simulation")
+        st.write(f"Ghost Cards: **{ghost_pct}%**")
+        st.write(f"Estimated Loss: **₹{ghost_loss} Cr**")
+        st.success(f"AI Cleanup Savings (~70%): **₹{round(ghost_loss * 0.7, 1)} Cr/year**")
+
+# ---------- TAB 4: FIELD STAFF & FPS ----------
+with tab4:
+    st.subheader("AI Module: Field Staff Tracking & FPS Monitoring")
+
+    visits_completed = int(fps_uptime / 5)
+    visits_planned = 25
+
+    col_f1, col_f2 = st.columns(2)
+
+    with col_f1:
+        st.markdown("##### Inspector Visit Compliance")
+        st.metric("Visits Completed", f"{visits_completed}", f"out of {visits_planned}")
+        st.metric("Compliance Rate", f"{int((visits_completed/visits_planned)*100)}%")
+
+    with col_f2:
+        st.markdown("##### Simple Visit Log (Demo)")
+        inspector_name = st.text_input("Inspector Name", "Ravi Kumar")
+        fps_code = st.text_input("FPS Code", "FPS-1039")
+        issue_flag = st.selectbox("Any Issue Observed?", ["No Issue", "Stock Mismatch", "Device Offline", "Suspected Diversion"])
+
+        if st.button("Submit Visit Log (Simulated)"):
+            st.success(f"Visit recorded for {fps_code}. Issue: {issue_flag}")
+
+# ---------- TAB 5: DBT FRAUD ANALYTICS ----------
+with tab5:
+    st.subheader("AI Module: DBT Fraud Analytics")
+
+    col_d1, col_d2 = st.columns(2)
+
+    with col_d1:
+        st.markdown("##### DBT Anomalies vs Risk Score")
+        fraud_df = pd.DataFrame({
+            "Anomalies per 10k txns": [0, 50, 100, 200, 300, dbt_anomalies],
+            "Risk Score": [0, 20, 40, 60, 80, fraud_risk]
+        })
+        st.line_chart(fraud_df, x="Anomalies per 10k txns", y="Risk Score")
+
+    with col_d2:
+        st.markdown("##### Sample Fraud Case")
+        st.write("**Scheme:** Rice Subsidy DBT")
+        st.write("**Beneficiary ID:** BEN-98234")
+        st.write("**Pattern:** Multiple withdrawals in 3 districts within 24 hours")
+        st.write(f"**Risk Score:** {fraud_risk}")
+
+        if fraud_risk > 60:
+            st.error("Action: AUTO-FREEZE payment & alert Audit Dept.")
+        elif fraud_risk > 30:
+            st.warning("Action: Send for manual review.")
+        else:
+            st.info("Action: Log only, no intervention.")
+
+# ---------- TAB 6: SIMPLE DEMO CHATBOT ----------
+with tab6:
+    st.subheader("AI Assistant (Demo)")
+
+    st.markdown("""
+    Ask questions about the Civil Supplies AI Command Centre.
+    This is a **simulated** chatbot with simple pre-set answers.
+    """)
+
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    for role, msg in st.session_state.chat_history:
+        with st.chat_message(role):
+            st.write(msg)
+
+    user_input = st.chat_input("Ask something about the Civil Supplies system...")
+
+    if user_input:
+        st.session_state.chat_history.append(("user", user_input))
+        with st.chat_message("user"):
+            st.write(user_input)
+
+        query = user_input.lower()
+
+        if "leakage" in query:
+            answer = "Leakage is detected by checking truck GPS deviation, FPS withdrawal anomalies, and stock mismatch."
+        elif "ghost" in query:
+            answer = "Ghost beneficiaries are detected using Aadhaar deduplication, inactivity checks, and pattern matching."
+        elif "dbt" in query:
+            answer = "DBT fraud is detected through unusual withdrawal bursts and cross-location usage patterns."
+        elif "quality" in query:
+            answer = "Quality is checked using AI-based visual inspection and warehouse temperature/humidity sensors."
+        else:
+            answer = "This is a demo chatbot. The real version will use an AI model to answer intelligently."
+
+        st.session_state.chat_history.append(("assistant", answer))
+        with st.chat_message("assistant"):
+            st.write(answer)
