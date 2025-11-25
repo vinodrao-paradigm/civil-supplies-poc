@@ -1,138 +1,75 @@
 import streamlit as st
 import pandas as pd
 
-# ---------- BASIC PAGE SETUP ----------
+# =========================
+# BASIC PAGE SETUP
+# =========================
 st.set_page_config(
     page_title="Civil Supplies AI Command Centre",
     layout="wide"
 )
 
 st.title("Civil Supplies AI Command Centre (PoC)")
-st.markdown("### Simulated AI-driven Fiscal Intelligence for AP Civil Supplies")
-st.write("VERSION: CHATBOT + CSV + XLS BUILD")
+st.markdown("### AI-driven Fiscal Intelligence for AP Civil Supplies (CSV-only build)")
+st.write("VERSION: CSV + Chatbot + NFSA/Sale/Scheme Dashboards")
 
 st.markdown("---")
 
-# ---------- LOAD REAL DATA (DISTRICT-WISE) ----------
+# =========================
+# FILE PATHS (ALL CSV)
+# =========================
 FPS_CSV_PATH = "FPSReportDistrictWiseAsPerLatestRecord.csv"
 RC_CSV_PATH = "RCReportDistrictWise.csv"
+NFSA_CSV_PATH = "NFSA_Date_Abstract.csv"
+SALE_CSV_PATH = "sale_dist.csv"
+SCHEME_CSV_PATH = "Scheme_Wise_Sale_Allotment_11_2025.csv"
 
-fps_df = None
-rc_df = None
-
-try:
-    fps_df = pd.read_csv(FPS_CSV_PATH)
-except Exception:
-    fps_df = None
-
-try:
-    rc_df = pd.read_csv(RC_CSV_PATH)
-except Exception:
-    rc_df = None
-
-# ---------- LOAD ADDITIONAL XLS DATA (OPTIONAL) ----------
-NFSA_XLS_PATH = "NFSA_Date_Abstract.xls"
-SALE_DIST_XLS_PATH = "sale_dist.xls"
-SCHEME_SALE_XLS_PATH = "Scheme_Wise_Sale_Allotment_11_2025.xls"
-
-nfsa_df = None
-sale_dist_df = None
-scheme_sale_df = None
-
-
-def load_excel_safe(path: str):
+# =========================
+# HELPERS
+# =========================
+@st.cache_data
+def load_csv(path: str) -> pd.DataFrame | None:
     try:
-        return pd.read_excel(path)
+        return pd.read_csv(path)
     except Exception as e:
-        st.warning(f"Optional file '{path}' not loaded: {e}")
+        st.info(f"Could not load '{path}': {e}")
         return None
 
 
-nfsa_df = load_excel_safe(NFSA_XLS_PATH)
-sale_dist_df = load_excel_safe(SALE_DIST_XLS_PATH)
-scheme_sale_df = load_excel_safe(SCHEME_SALE_XLS_PATH)
-
-# Mapping from UI-friendly district names to CSV State_Name_EN1 values
-DISTRICT_MAPPING = {
-    "All AP": None,
-    "Anantapur": "ANANTAPUR [553]",
-    "Chittoor": "CHITTOOR [554]",
-    "East Godavari": "EAST GODAVARI [545]",
-    "Guntur": "GUNTUR [548]",
-    "Krishna": "KRISHNA [547]",
-    "Kurnool": "KURNOOL [552]",
-    "Prakasam": "PRAKASAM [549]",
-    "SPSR Nellore": "SPSR NELLORE [550]",
-    "Srikakulam": "SRIKAKULAM [542]",
-    "Visakhapatnam": "VISAKHAPATANAM [544]",
-    "Vizianagaram": "VIZIANAGARAM [543]",
-    "West Godavari": "WEST GODAVARI [546]",
-    "YSR Kadapa": "Y.S.R. [551]",
-}
-
-# Real column names from your CSVs
-FPS_DISTRICT_COL = "State_Name_EN1"
-RC_DISTRICT_COL = "State_Name_EN1"
-FPS_COUNT_COL = "Textbox133"  # looks like total FPS
-RC_COUNT_COL = "TotalRC"      # total ration cards
-
-
-def _to_int(val):
-    """Convert strings like '2,352' or '11,34,699' to int safely."""
-    try:
-        s = str(val).replace(",", "").strip()
-        if s == "" or s.lower() == "nan":
-            return 0
-        return int(float(s))
-    except Exception:
-        return 0
-
-
 def to_numeric(series: pd.Series) -> pd.Series:
-    """Convert a column to numeric, safely (handles commas)."""
+    """Convert a column to numeric, safely (handles commas and junk)."""
     return pd.to_numeric(
         series.astype(str).str.replace(",", "", regex=False),
         errors="coerce"
     )
 
 
-def get_totals_for_selection(csv_district_name):
-    """Return (total_fps, total_rc) for given CSV district name or all AP if None."""
-    total_fps = None
-    total_rc = None
-
-    # FPS side
-    if fps_df is not None and FPS_DISTRICT_COL in fps_df.columns and FPS_COUNT_COL in fps_df.columns:
-        if csv_district_name is None:
-            # All AP: sum across all real districts (exclude 'Total: 13' row)
-            mask = ~fps_df[FPS_DISTRICT_COL].astype(str).str.startswith("Total")
-            total_fps = sum(_to_int(v) for v in fps_df.loc[mask, FPS_COUNT_COL])
-        else:
-            row = fps_df[fps_df[FPS_DISTRICT_COL] == csv_district_name]
-            if not row.empty:
-                total_fps = _to_int(row.iloc[0][FPS_COUNT_COL])
-
-    # RC side
-    if rc_df is not None and RC_DISTRICT_COL in rc_df.columns and RC_COUNT_COL in rc_df.columns:
-        if csv_district_name is None:
-            mask = ~rc_df[RC_DISTRICT_COL].astype(str).str.startswith("Total")
-            total_rc = sum(_to_int(v) for v in rc_df.loc[mask, RC_COUNT_COL])
-        else:
-            row = rc_df[rc_df[RC_DISTRICT_COL] == csv_district_name]
-            if not row.empty:
-                total_rc = _to_int(row.iloc[0][RC_COUNT_COL])
-
-    return total_fps, total_rc
+def numeric_columns(df: pd.DataFrame) -> list[str]:
+    """
+    Return columns that can reasonably be treated as numeric
+    (after coercion, have at least 1 non-null numeric value).
+    """
+    cols = []
+    for col in df.columns:
+        s = to_numeric(df[col])
+        if s.notna().sum() > 0:
+            cols.append(col)
+    return cols
 
 
-# ---------- SIDEBAR: GLOBAL INPUTS ----------
+# =========================
+# LOAD DATA
+# =========================
+fps_df = load_csv(FPS_CSV_PATH)
+rc_df = load_csv(RC_CSV_PATH)
+nfsa_df = load_csv(NFSA_CSV_PATH)
+sale_df = load_csv(SALE_CSV_PATH)
+scheme_df = load_csv(SCHEME_CSV_PATH)
+
+# =========================
+# SIDEBAR: SIMULATION CONTROLS
+# =========================
 st.sidebar.header("Simulation Controls")
-
-district_label = st.sidebar.selectbox(
-    "Select District",
-    list(DISTRICT_MAPPING.keys())
-)
-csv_district_name = DISTRICT_MAPPING[district_label]
 
 leakage_dev = st.sidebar.slider(
     "Avg Truck Route Deviation (%)", 0, 50, 8
@@ -153,15 +90,15 @@ quality_level = st.sidebar.selectbox(
 
 st.sidebar.markdown("---")
 st.sidebar.caption(
-    "Risk scores below are simulated for PoC demo. "
-    "CSVs are used only for FPS/RC aggregate counts."
+    "KPIs and risk scores are simulated for PoC demo. "
+    "CSVs are used for real-looking tables and charts."
 )
 
-total_fps, total_rc = get_totals_for_selection(csv_district_name)
-
-# ---------- TOP KPI CARDS (SIMULATED AI KPIs) ----------
+# =========================
+# SIMULATED KPIs
+# =========================
 leakage_index = round(leakage_dev * 1.5, 1)
-ghost_loss = ghost_pct * 3   # in ₹ Crore
+ghost_loss = ghost_pct * 3   # ₹ Cr (simulated)
 quality_score = 95 if quality_level == "Good" else (78 if quality_level == "Mixed" else 60)
 fraud_risk = round(dbt_anomalies / 5, 1)
 fiscal_savings = max(
@@ -169,43 +106,22 @@ fiscal_savings = max(
     round(750 - (leakage_index + ghost_loss + (100 - quality_score) + fraud_risk), 1)
 )
 
-col1, col2, col3, col4, col5 = st.columns(5)
-
-col1.metric("Leakage Index", leakage_index, f"{leakage_dev}% deviation")
-col2.metric("Ghost Beneficiary Loss (₹ Cr)", ghost_loss, f"{ghost_pct}% ghost")
-col3.metric("Quality Score", quality_score, quality_level)
-col4.metric("DBT Fraud Risk Score", fraud_risk, f"{dbt_anomalies} alerts/10k")
-col5.metric("Estimated Annual Savings (₹ Cr)", fiscal_savings, "Simulated")
-
-# ---------- REAL DATA SNAPSHOT FROM CSV ----------
-st.markdown("#### Real Data Snapshot (from latest FPS / RC reports)")
-
-colr1, colr2, colr3 = st.columns(3)
-
-if total_fps is not None and total_rc is not None:
-    colr1.metric(
-        "Total FPS in Selection",
-        f"{total_fps:,}" if isinstance(total_fps, int) else str(total_fps)
-    )
-    colr2.metric(
-        "Total Ration Cards",
-        f"{total_rc:,}" if isinstance(total_rc, int) else str(total_rc)
-    )
-    colr3.metric(
-        "Avg Cards per FPS",
-        f"{round(total_rc / total_fps, 1) if total_fps not in (None, 0) else '-'}"
-    )
-else:
-    colr1.write(
-        "ℹ️ FPS/RC CSVs not loaded or matching columns not found. "
-        "Check file paths and column names in the app."
-    )
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric("Leakage Index", leakage_index, f"{leakage_dev}% deviation")
+k2.metric("Ghost Beneficiary Loss (₹ Cr)", ghost_loss, f"{ghost_pct}% ghost")
+k3.metric("Quality Score", quality_score, quality_level)
+k4.metric("DBT Fraud Risk Score", fraud_risk, f"{dbt_anomalies} alerts/10k")
+k5.metric("Estimated Annual Savings (₹ Cr)", fiscal_savings, "Simulated")
 
 st.markdown("---")
 
-# ---------- TABS FOR DIFFERENT MODULES ----------
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
-    "Overview Dashboard",
+# =========================
+# TABS
+# =========================
+tabs = st.tabs([
+    "Overview",
+    "FPS (District-wise)",
+    "Ration Cards (District-wise)",
     "Leakage & Movement",
     "Ghost Beneficiaries",
     "Field Staff & FPS",
@@ -213,17 +129,20 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "AI Chatbot",
     "NFSA Date Abstract",
     "Sale Distribution",
-    "Scheme-wise Allotment / Raw"
+    "Scheme-wise Allotment vs Sale",
+    "Raw Data Explorer",
 ])
 
-# ---------- TAB 1: OVERVIEW ----------
-with tab1:
-    st.subheader(f"State Overview - {district_label}")
+# =========================
+# TAB 1: OVERVIEW
+# =========================
+with tabs[0]:
+    st.subheader("Overview Dashboard")
 
-    col_a, col_b = st.columns([2, 1])
+    c1, c2 = st.columns([2, 1])
 
-    with col_a:
-        st.markdown("#### Trend of Risk Scores (Simulated)")
+    with c1:
+        st.markdown("#### Risk Trend (Simulated)")
         trend_df = pd.DataFrame({
             "Month": ["Apr", "May", "Jun", "Jul", "Aug", "Sep"],
             "Leakage Index": [
@@ -245,15 +164,15 @@ with tab1:
         }).set_index("Month")
         st.line_chart(trend_df)
 
-    with col_b:
-        st.markdown("#### Quick Health Snapshot")
+    with c2:
+        st.markdown("#### Health Snapshot")
         st.progress(fps_uptime / 100.0)
         st.write(f"FPS Uptime: **{fps_uptime}%**")
 
         if leakage_index > 50:
-            st.error("High Leakage Risk Detected in Supply Chain")
+            st.error("High Leakage Risk in Supply Chain")
         elif leakage_index > 30:
-            st.warning("Moderate Leakage Risk – Needs Monitoring")
+            st.warning("Moderate Leakage Risk – Watchlist")
         else:
             st.success("Leakage Under Control")
 
@@ -265,53 +184,56 @@ with tab1:
             st.success("DBT Fraud Risk is NORMAL")
 
     st.markdown("#### AI Alert Feed (Simulated)")
-    st.write("- 🚨 **Truck diversion suspected** on Route VJA-123 (off-route by 12 km).")
-    st.write("- ⚠️ **5,432 ghost cards** flagged in last monthly Aadhaar sync.")
-    st.write("- 🚨 **DBT burst pattern** detected in Tirupati cluster (₹1.2 Cr risk).")
-    st.write("- ✅ **Quality checks cleared** for latest FCI shipment to Visakhapatnam.")
+    st.write("- 🚨 Truck diversion suspected on Route VJA-123 (off-route by 12 km).")
+    st.write("- ⚠️ 5,432 ghost cards flagged in last Aadhaar sync.")
+    st.write("- 🚨 DBT burst pattern detected in Tirupati cluster (₹1.2 Cr risk).")
+    st.write("- ✅ Quality checks cleared for latest FCI shipment to Visakhapatnam.")
 
-    st.markdown("#### What this PoC represents in the full AI solution")
-    with st.expander("Click to expand explanation for Minister / IAS"):
-        st.markdown(
-            "- This PoC demonstrates five AI modules: leakage detection, ghost beneficiary cleanup, "
-            "FPS/field staff monitoring, DBT fraud analytics, and quality checks.\n"
-            "- In production, it would run on live data from AePDS, ePoS, DBT systems, GPS and warehouse "
-            "systems instead of simulated sliders.\n"
-            "- The goal is to reduce losses from leakage, ineligible beneficiaries and fraud, and to improve "
-            "reliability and transparency in the PDS."
-        )
-
-    st.markdown("#### District Data from CSV (if available)")
-    if (
-        fps_df is not None
-        and FPS_DISTRICT_COL in fps_df.columns
-        and rc_df is not None
-        and RC_DISTRICT_COL in rc_df.columns
-    ):
-        if csv_district_name is None:
-            st.write("Showing first few rows of FPS report:")
-            st.dataframe(fps_df.head())
-            st.write("Showing first few rows of RC report:")
-            st.dataframe(rc_df.head())
-        else:
-            st.write("FPS Snapshot for selected district:")
-            st.dataframe(fps_df[fps_df[FPS_DISTRICT_COL] == csv_district_name])
-            st.write("Ration Card Snapshot for selected district:")
-            st.dataframe(rc_df[rc_df[RC_DISTRICT_COL] == csv_district_name])
+    st.markdown("#### Real Data Snapshots (from CSVs)")
+    if fps_df is not None:
+        st.write("FPS CSV (first 10 rows):")
+        st.dataframe(fps_df.head(10), use_container_width=True)
     else:
-        st.info(
-            "FPS/RC CSVs not loaded or district columns not found. "
-            "Check file paths and column names at the top of app.py."
-        )
+        st.info("FPS CSV not loaded.")
 
-# ---------- TAB 2: LEAKAGE & MOVEMENT ----------
-with tab2:
+    if rc_df is not None:
+        st.write("RC CSV (first 10 rows):")
+        st.dataframe(rc_df.head(10), use_container_width=True)
+    else:
+        st.info("RC CSV not loaded.")
+
+# =========================
+# TAB 2: FPS VIEW
+# =========================
+with tabs[1]:
+    st.subheader("FPS District-wise View")
+
+    if fps_df is not None:
+        st.dataframe(fps_df, use_container_width=True)
+    else:
+        st.warning("FPSReportDistrictWiseAsPerLatestRecord.csv not found.")
+
+# =========================
+# TAB 3: RC VIEW
+# =========================
+with tabs[2]:
+    st.subheader("Ration Cards District-wise View")
+
+    if rc_df is not None:
+        st.dataframe(rc_df, use_container_width=True)
+    else:
+        st.warning("RCReportDistrictWise.csv not found.")
+
+# =========================
+# TAB 4: LEAKAGE & MOVEMENT
+# =========================
+with tabs[3]:
     st.subheader("AI Module: Supply Chain Leakage Anomaly Detection")
 
     col_l1, col_l2 = st.columns(2)
 
     with col_l1:
-        st.markdown("##### Route Deviation vs Alert Level")
+        st.markdown("##### Route Deviation vs Alert Level (Simulated)")
         route_df = pd.DataFrame({
             "Route Deviation (%)": [0, 5, 10, 15, 20, leakage_dev],
             "Alert Score": [0, 10, 30, 50, 70, leakage_index],
@@ -319,22 +241,19 @@ with tab2:
         st.bar_chart(route_df, x="Route Deviation (%)", y="Alert Score")
 
     with col_l2:
-        st.markdown("##### Sample Route Alert")
-        st.write(f"**District:** {district_label}")
+        st.markdown("##### Sample Route Alert (Narrative)")
         st.write("**Route ID:** MD-204")
         st.write(f"**Deviation Detected:** {leakage_dev}%")
         st.write(f"**AI Leakage Index:** {leakage_index}")
-
         if leakage_index > 50:
-            st.error(
-                "Action Recommended: Immediately contact Enforcement Cell "
-                "and freeze FPS withdrawals."
-            )
+            st.error("Action: Freeze FPS withdrawals & alert Enforcement Cell.")
         else:
-            st.info("Action: Monitor this route and schedule surprise inspection.")
+            st.info("Action: Monitor route & schedule surprise inspection.")
 
-# ---------- TAB 3: GHOST BENEFICIARIES ----------
-with tab3:
+# =========================
+# TAB 5: GHOST BENEFICIARIES
+# =========================
+with tabs[4]:
     st.subheader("AI Module: Ghost Beneficiary Cleanup")
 
     col_g1, col_g2 = st.columns(2)
@@ -348,15 +267,17 @@ with tab3:
         st.area_chart(ghost_df, x="Ghost %", y="Loss (₹ Cr)")
 
     with col_g2:
-        st.markdown("##### Current Cleanup Simulation")
+        st.markdown("##### Cleanup Simulation")
         st.write(f"Ghost Cards: **{ghost_pct}%**")
         st.write(f"Estimated Loss: **₹{ghost_loss} Cr**")
         st.success(
-            f"AI Cleanup Savings (~70%): **₹{round(ghost_loss * 0.7, 1)} Cr/year**"
+            f"Potential AI Cleanup Savings (~70%): **₹{round(ghost_loss * 0.7, 1)} Cr/year**"
         )
 
-# ---------- TAB 4: FIELD STAFF & FPS ----------
-with tab4:
+# =========================
+# TAB 6: FIELD STAFF & FPS
+# =========================
+with tabs[5]:
     st.subheader("AI Module: Field Staff Tracking & FPS Monitoring")
 
     visits_completed = int(fps_uptime / 5)
@@ -384,8 +305,10 @@ with tab4:
         if st.button("Submit Visit Log (Simulated)"):
             st.success(f"Visit recorded for {fps_code}. Issue: {issue_flag}")
 
-# ---------- TAB 5: DBT FRAUD ANALYTICS ----------
-with tab5:
+# =========================
+# TAB 7: DBT FRAUD ANALYTICS
+# =========================
+with tabs[6]:
     st.subheader("AI Module: DBT Fraud Analytics")
 
     col_d1, col_d2 = st.columns(2)
@@ -404,7 +327,6 @@ with tab5:
         st.write("**Beneficiary ID:** BEN-98234")
         st.write("**Pattern:** Multiple withdrawals in 3 districts within 24 hours")
         st.write(f"**Risk Score:** {fraud_risk}")
-
         if fraud_risk > 60:
             st.error("Action: AUTO-FREEZE payment & alert Audit Dept.")
         elif fraud_risk > 30:
@@ -412,8 +334,10 @@ with tab5:
         else:
             st.info("Action: Log only, no intervention.")
 
-# ---------- TAB 6: SIMPLE DEMO CHATBOT ----------
-with tab6:
+# =========================
+# TAB 8: AI CHATBOT
+# =========================
+with tabs[7]:
     st.subheader("AI Assistant (Demo)")
 
     if st.button("🗑️ Clear Chat History"):
@@ -439,180 +363,207 @@ with tab6:
         with st.chat_message("user"):
             st.write(user_input)
 
-        query = user_input.lower()
+        q = user_input.lower()
 
-        if "what is this" in query or "what does this system do" in query or "explain this" in query:
+        if "what is this" in q or "what does this system do" in q or "explain this" in q:
             answer = (
                 "This system is a Proof of Concept for an AI-enabled Civil Supplies Command Centre. "
                 "It shows how data from AePDS, ePoS, DBT, FPS inspections and quality checks can be combined into one dashboard "
                 "so that leakages, ghost beneficiaries and fraud can be detected early and acted on."
             )
-        elif "minister" in query or "ias" in query or "secretary" in query:
+        elif "minister" in q or "ias" in q or "secretary" in q:
             answer = (
                 "For the Minister and senior IAS officers, this dashboard gives a top-down view: key KPIs like leakage index, "
                 "ghost beneficiary loss, DBT fraud risk, FPS uptime and estimated savings. "
                 "They can quickly see which districts are healthy, which are at risk and what actions the system recommends."
             )
-        elif "leakage" in query or "diversion" in query or "truck" in query or "route" in query:
+        elif "leakage" in q or "diversion" in q or "truck" in q or "route" in q:
             answer = (
                 "Leakage is detected by monitoring truck GPS routes, stock movement and FPS withdrawals. "
                 "If a truck goes off its normal route or the stock issued at FPS does not match what was dispatched, "
                 "the AI raises a leakage alert with a risk score for that route or FPS."
             )
-        elif "ghost" in query or "beneficiary" in query or "duplicate" in query:
+        elif "ghost" in q or "beneficiary" in q or "duplicate" in q:
             answer = (
                 "Ghost beneficiaries are identified using Aadhaar deduplication, inactivity checks and cross-district pattern analysis. "
                 "The system looks for cards that are not used for many months, cards linked to the same Aadhaar or address, "
                 "and suspicious claims across multiple locations."
             )
-        elif "dbt" in query or "fraud" in query or "payment" in query or "transaction" in query:
+        elif "dbt" in q or "fraud" in q or "payment" in q or "transaction" in q:
             answer = (
                 "DBT fraud is detected by analysing transaction patterns. The system flags unusual withdrawal bursts, "
                 "multiple withdrawals from different locations for the same beneficiary and amounts that do not match typical behaviour. "
                 "High-risk cases can be auto-frozen or sent for audit."
             )
-        elif "quality" in query or "grain" in query or "fci" in query or "warehouse" in query:
+        elif "quality" in q or "grain" in q or "fci" in q or "warehouse" in q:
             answer = (
                 "Grain quality is monitored using image-based inspection and simple IoT inputs from warehouses. "
                 "If colour, texture or moisture levels look abnormal, AI can flag a batch for manual inspection before it reaches beneficiaries."
             )
-        elif "savings" in query or "money" in query or "roi" in query or "benefit" in query:
+        elif "savings" in q or "money" in q or "roi" in q or "benefit" in q:
             answer = (
                 "The PoC demonstrates how AI can reduce losses from leakage, ghost cards and fraud. "
                 "By acting on these alerts, the department can save a significant portion of recurring losses each year, "
                 "while improving reliability and trust in the PDS system."
             )
-        elif "data" in query or "source" in query or "where does data come" in query:
+        elif "data" in q or "source" in q or "where does data come" in q:
             answer = (
                 "In the real system, the data would come from AePDS, ePoS devices, DBT payment systems, GPS trackers and warehouse systems. "
                 "In this PoC, all risk scores are simulated to show the behaviour without using any real beneficiary data."
             )
-        elif "implementation" in query or "how will this be implemented" in query or "next steps" in query:
+        elif "implementation" in q or "how will this be implemented" in q or "next steps" in q:
             answer = (
                 "This PoC is the first step. Once approved, the next phases would include connecting to real data sources via APIs, "
                 "fine-tuning AI models on Andhra Pradesh data and rolling out the dashboards in pilot districts before statewide scaling."
-            )
-        elif "dashboard" in query or "screen" in query or "tab" in query:
-            answer = (
-                "The dashboard is organised into tabs: an overview for leadership and separate views for leakage, ghost beneficiaries, "
-                "field staff/FPS monitoring and DBT fraud analytics. Each tab shows KPIs, trends and example alerts to demonstrate how AI supports decisions."
             )
         else:
             answer = (
                 "This PoC chatbot is using prepared answers, not a live AI model. "
                 "In simple terms, the system is designed to reduce leakage, clean up beneficiary data, detect DBT fraud and improve FPS performance "
-                "using AI-driven analytics. You can ask about leakage, ghost beneficiaries, DBT fraud, grain quality, data sources "
-                "or how this helps the Minister."
+                "using AI-driven analytics."
             )
 
         st.session_state.chat_history.append(("assistant", answer))
         with st.chat_message("assistant"):
             st.write(answer)
 
-# ---------- TAB 7: NFSA DATE ABSTRACT ----------
-with tab7:
-    st.subheader("NFSA Date-wise Abstract (from NFSA_Date_Abstract.xls)")
+# =========================
+# TAB 9: NFSA DATE ABSTRACT (CSV)
+# =========================
+with tabs[8]:
+    st.subheader("NFSA Date-wise Abstract (from NFSA_Date_Abstract.csv)")
 
     if nfsa_df is not None:
-        st.markdown("Raw table (first 100 rows):")
-        st.dataframe(nfsa_df.head(100), use_container_width=True)
+        st.dataframe(nfsa_df.head(200), use_container_width=True)
 
         date_col = st.selectbox(
             "Select Date column:",
             nfsa_df.columns.tolist()
         )
-        value_col = st.selectbox(
-            "Select Quantity / Value column:",
-            nfsa_df.columns.tolist()
-        )
 
-        if st.button("Plot NFSA Date-wise Trend"):
-            tmp = nfsa_df[[date_col, value_col]].copy()
-            tmp[date_col] = pd.to_datetime(tmp[date_col], errors="coerce")
-            tmp[value_col] = to_numeric(tmp[value_col])
-            tmp = tmp.dropna()
-
-            if not tmp.empty:
-                st.line_chart(tmp.set_index(date_col)[value_col])
-            else:
-                st.warning("No valid data to plot after cleaning.")
-    else:
-        st.info("NFSA_Date_Abstract.xls not found or not loaded. Place it next to app.py to enable this tab.")
-
-# ---------- TAB 8: SALE DISTRIBUTION ----------
-with tab8:
-    st.subheader("Sale Distribution (from sale_dist.xls)")
-
-    if sale_dist_df is not None:
-        st.markdown("Raw view (first 100 rows):")
-        st.dataframe(sale_dist_df.head(100), use_container_width=True)
-
-        col_options = sale_dist_df.columns.tolist()
-        group_col = st.selectbox("Group by column:", col_options, key="sale_group")
-        value_col = st.selectbox("Value column (amount/qty):", col_options, key="sale_val")
-
-        if st.button("Plot Sale Distribution"):
-            tmp = sale_dist_df[[group_col, value_col]].copy()
-            tmp[value_col] = to_numeric(tmp[value_col])
-            agg = (
-                tmp.groupby(group_col)[value_col]
-                .sum()
-                .sort_values(ascending=False)
-                .head(20)
+        num_cols = numeric_columns(nfsa_df)
+        if not num_cols:
+            st.info("No numeric-like columns found in NFSA CSV for charting.")
+        else:
+            value_col = st.selectbox(
+                "Select Quantity / Value column:",
+                num_cols
             )
 
-            if not agg.empty:
-                st.bar_chart(agg)
-            else:
-                st.warning("No numeric data to plot after aggregation.")
+            if st.button("Plot NFSA Trend"):
+                tmp = nfsa_df[[date_col, value_col]].copy()
+                tmp[date_col] = pd.to_datetime(tmp[date_col], errors="coerce")
+                tmp[value_col] = to_numeric(tmp[value_col])
+                tmp = tmp.dropna()
+                if not tmp.empty:
+                    st.line_chart(tmp.set_index(date_col)[value_col])
+                else:
+                    st.warning("No valid data to plot after cleaning.")
     else:
-        st.info("sale_dist.xls not found or not loaded. Place it next to app.py to enable this tab.")
+        st.info("NFSA_Date_Abstract.csv not found.")
 
-# ---------- TAB 9: SCHEME-WISE ALLOTMENT / RAW EXPLORER ----------
-with tab9:
-    st.subheader("Scheme-wise Allotment vs Sale (from Scheme_Wise_Sale_Allotment_11_2025.xls)")
+# =========================
+# TAB 10: SALE DISTRIBUTION (CSV)
+# =========================
+with tabs[9]:
+    st.subheader("Sale Distribution (from sale_dist.csv)")
 
-    if scheme_sale_df is not None:
-        st.markdown("Raw view (first 100 rows):")
-        st.dataframe(scheme_sale_df.head(100), use_container_width=True)
+    if sale_df is not None:
+        st.dataframe(sale_df.head(200), use_container_width=True)
 
-        col_options = scheme_sale_df.columns.tolist()
-        scheme_col = st.selectbox("Scheme column:", col_options, key="scheme_col")
-        allot_col = st.selectbox("Allotment column:", col_options, key="allot_col")
-        sale_col = st.selectbox("Sale column:", col_options, key="sale_col")
+        group_col = st.selectbox(
+            "Group by column:",
+            sale_df.columns.tolist()
+        )
 
-        if st.button("Plot Scheme-wise Allotment vs Sale"):
-            tmp = scheme_sale_df[[scheme_col, allot_col, sale_col]].copy()
+        num_cols = numeric_columns(sale_df)
+        if not num_cols:
+            st.info("No numeric-like columns found in sale_dist CSV for charting.")
+        else:
+            value_col = st.selectbox(
+                "Value column (amount/qty):",
+                num_cols
+            )
 
-            tmp[allot_col] = to_numeric(tmp[allot_col])
-            tmp[sale_col] = to_numeric(tmp[sale_col])
-
-            agg = tmp.groupby(scheme_col)[[allot_col, sale_col]].sum()
-
-            if not agg.empty:
-                st.bar_chart(agg)
-            else:
-                st.warning("No numeric data to plot after aggregation.")
-
+            if st.button("Plot Sale Distribution"):
+                tmp = sale_df[[group_col, value_col]].copy()
+                tmp[value_col] = to_numeric(tmp[value_col])
+                agg = (
+                    tmp.groupby(group_col)[value_col]
+                    .sum()
+                    .sort_values(ascending=False)
+                )
+                if not agg.empty:
+                    st.bar_chart(agg)
+                else:
+                    st.warning("No numeric data to plot after aggregation.")
     else:
-        st.info("Scheme_Wise_Sale_Allotment_11_2025.xls not found or not loaded. Place it next to app.py to enable this section.")
+        st.info("sale_dist.csv not found.")
 
-    st.markdown("---")
-    st.subheader("Raw Data Explorer (All Loaded Files)")
+# =========================
+# TAB 11: SCHEME-WISE (CSV)
+# =========================
+with tabs[10]:
+    st.subheader("Scheme-wise Allotment vs Sale (from Scheme_Wise_Sale_Allotment_11_2025.csv)")
+
+    if scheme_df is not None:
+        st.dataframe(scheme_df.head(200), use_container_width=True)
+
+        scheme_col = st.selectbox(
+            "Scheme column:",
+            scheme_df.columns.tolist()
+        )
+
+        num_cols = numeric_columns(scheme_df)
+        if len(num_cols) < 2:
+            st.info(
+                "Need at least two numeric-like columns (e.g., Allotment & Sale) "
+                "to plot a comparison chart."
+            )
+        else:
+            allot_col = st.selectbox(
+                "Allotment column:",
+                num_cols,
+                key="scheme_allot"
+            )
+            sale_col = st.selectbox(
+                "Sale column:",
+                num_cols,
+                key="scheme_sale"
+            )
+
+            if st.button("Plot Scheme-wise Allotment vs Sale"):
+                tmp = scheme_df[[scheme_col, allot_col, sale_col]].copy()
+                tmp[allot_col] = to_numeric(tmp[allot_col])
+                tmp[sale_col] = to_numeric(tmp[sale_col])
+                agg = tmp.groupby(scheme_col)[[allot_col, sale_col]].sum()
+                if not agg.empty:
+                    st.bar_chart(agg)
+                else:
+                    st.warning("No numeric data to plot after aggregation.")
+    else:
+        st.info("Scheme_Wise_Sale_Allotment_11_2025.csv not found.")
+
+# =========================
+# TAB 12: RAW DATA EXPLORER
+# =========================
+with tabs[11]:
+    st.subheader("Raw Data Explorer")
+
     datasets = {}
     if fps_df is not None:
         datasets["FPS CSV"] = fps_df
     if rc_df is not None:
         datasets["RC CSV"] = rc_df
     if nfsa_df is not None:
-        datasets["NFSA XLS"] = nfsa_df
-    if sale_dist_df is not None:
-        datasets["Sale Dist XLS"] = sale_dist_df
-    if scheme_sale_df is not None:
-        datasets["Scheme-wise XLS"] = scheme_sale_df
+        datasets["NFSA CSV"] = nfsa_df
+    if sale_df is not None:
+        datasets["Sale Dist CSV"] = sale_df
+    if scheme_df is not None:
+        datasets["Scheme-wise CSV"] = scheme_df
 
     if not datasets:
-        st.warning("No datasets loaded. Ensure CSV/XLS files are present next to app.py.")
+        st.warning("No datasets loaded. Check that CSV files exist next to app.py.")
     else:
-        choice = st.selectbox("Choose dataset to view:", list(datasets.keys()))
+        choice = st.selectbox("Select dataset:", list(datasets.keys()))
         st.dataframe(datasets[choice], use_container_width=True)
