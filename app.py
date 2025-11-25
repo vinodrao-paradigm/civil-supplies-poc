@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-import os
-from pathlib import Path
 
 # =========================
 # BASIC PAGE SETUP
@@ -27,29 +25,10 @@ SALE_CSV_PATH = "sale_dist.csv"
 SCHEME_CSV_PATH = "Scheme_Wise_Sale_Allotment_11_2025.csv"
 
 # =========================
-# SHOW WHERE STREAMLIT IS RUNNING & IF FILES EXIST
-# =========================
-cwd = os.getcwd()
-st.markdown("#### Debug: File Locations")
-st.write(f"**Current working folder:** `{cwd}`")
-
-for name in [
-    FPS_CSV_PATH,
-    RC_CSV_PATH,
-    NFSA_CSV_PATH,
-    SALE_CSV_PATH,
-    SCHEME_CSV_PATH,
-]:
-    exists = Path(name).exists()
-    st.write(f"- `{name}` exists here? **{exists}**")
-
-st.markdown("---")
-
-# =========================
 # HELPERS
 # =========================
-
 def load_csv(path: str) -> pd.DataFrame | None:
+    """Load a CSV safely; if missing, show a gentle info box and return None."""
     try:
         return pd.read_csv(path)
     except Exception as e:
