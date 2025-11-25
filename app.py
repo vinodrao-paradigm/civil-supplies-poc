@@ -1,477 +1,578 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 
-# ---------- BASIC PAGE SETUP ----------
+# -----------------------------------
+# BASIC PAGE SETUP
+# -----------------------------------
 st.set_page_config(
-    page_title="Civil Supplies AI Command Centre",
+    page_title="Civil Supplies AI Command Centre (PoC)",
     layout="wide"
 )
 
 st.title("Civil Supplies AI Command Centre (PoC)")
-st.markdown("### Simulated AI-driven Fiscal Intelligence for AP Civil Supplies")
-st.write("VERSION: CHATBOT + CSV BUILD 2")
-
+st.markdown("### AP Civil Supplies · NFSA · Scheme-wise Analytics (Demo Dashboard)")
+st.write("VERSION: Multi-file build with joins, heatmaps, anomalies & AI-style insights")
 st.markdown("---")
 
-# ---------- LOAD REAL DATA (DISTRICT-WISE) ----------
+# -----------------------------------
+# FILE PATHS (KEEP IN SAME FOLDER AS app.py)
+# -----------------------------------
 FPS_CSV_PATH = "FPSReportDistrictWiseAsPerLatestRecord.csv"
 RC_CSV_PATH = "RCReportDistrictWise.csv"
+SALE_DIST_XLS_PATH = "sale_dist.xls"
+NFSA_DATE_ABSTRACT_XLS_PATH = "NFSA_Date_Abstract.xls"
+SCHEME_SALE_ALLOT_XLS_PATH = "Scheme_Wise_Sale_Allotment_11_2025.xls"
+DISTRICT_LAT_LONG_CSV = "district_lat_long.csv"  # optional
 
-fps_df = None
-rc_df = None
+# -----------------------------------
+# HELPERS TO LOAD DATA
+# -----------------------------------
+@st.cache_data
+def load_csv(path: str) -> pd.DataFrame:
+    return pd.read_csv(path)
 
-try:
-    fps_df = pd.read_csv(FPS_CSV_PATH)
-except Exception:
-    fps_df = None
+@st.cache_data
+def load_xls(path: str) -> pd.DataFrame:
+    # For .xls files we typically need xlrd
+    return pd.read_excel(path, engine="xlrd")
 
-try:
-    rc_df = pd.read_csv(RC_CSV_PATH)
-except Exception:
-    rc_df = None
+@st.cache_data
+def safe_numeric(series: pd.Series) -> pd.Series:
+    """Convert a column to numeric, stripping commas."""
+    return pd.to_numeric(
+        series.astype(str).str.replace(",", "", regex=False),
+        errors="coerce"
+    )
 
-# Mapping from UI-friendly district names to CSV State_Name_EN1 values
-DISTRICT_MAPPING = {
-    "All AP": None,
-    "Anantapur": "ANANTAPUR [553]",
-    "Chittoor": "CHITTOOR [554]",
-    "East Godavari": "EAST GODAVARI [545]",
-    "Guntur": "GUNTUR [548]",
-    "Krishna": "KRISHNA [547]",
-    "Kurnool": "KURNOOL [552]",
-    "Prakasam": "PRAKASAM [549]",
-    "SPSR Nellore": "SPSR NELLORE [550]",
-    "Srikakulam": "SRIKAKULAM [542]",
-    "Visakhapatnam": "VISAKHAPATANAM [544]",
-    "Vizianagaram": "VIZIANAGARAM [543]",
-    "West Godavari": "WEST GODAVARI [546]",
-    "YSR Kadapa": "Y.S.R. [551]",
-}
+@st.cache_data
+def join_on_columns(
+    left_df: pd.DataFrame,
+    right_df: pd.DataFrame,
+    left_col: str,
+    right_col: str
+) -> pd.DataFrame:
+    return left_df.merge(
+        right_df,
+        left_on=left_col,
+        right_on=right_col,
+        how="inner",
+        suffixes=("_FPS", "_RC")
+    )
 
-# Real column names from your CSVs
-FPS_DISTRICT_COL = "State_Name_EN1"
-RC_DISTRICT_COL = "State_Name_EN1"
-FPS_COUNT_COL = "Textbox133"  # looks like total FPS
-RC_COUNT_COL = "TotalRC"      # total ration cards
-
-
-def _to_int(val):
-    """Convert strings like '2,352' or '11,34,699' to int safely."""
+@st.cache_data
+def load_district_lat_long(path: str) -> pd.DataFrame | None:
     try:
-        s = str(val).replace(",", "").strip()
-        if s == "" or s.lower() == "nan":
-            return 0
-        return int(float(s))
+        df = pd.read_csv(path)
+        # expecting: district, lat, lon
+        return df
     except Exception:
-        return 0
+        return None
 
+# -----------------------------------
+# LOAD ALL DATASETS (WITH ERROR HANDLING)
+# -----------------------------------
+fps_df = rc_df = sale_dist_df = nfsa_date_df = scheme_sale_df = district_geo_df = None
 
-def get_totals_for_selection(csv_district_name):
-    """Return (total_fps, total_rc) for given CSV district name or all AP if None."""
-    total_fps = None
-    total_rc = None
+try:
+    fps_df = load_csv(FPS_CSV_PATH)
+except Exception as e:
+    st.error(f"Could not load {FPS_CSV_PATH}: {e}")
 
-    # FPS side
-    if fps_df is not None and FPS_DISTRICT_COL in fps_df.columns and FPS_COUNT_COL in fps_df.columns:
-        if csv_district_name is None:
-            # All AP: sum across all real districts (exclude 'Total: 13' row)
-            mask = ~fps_df[FPS_DISTRICT_COL].astype(str).str.startswith("Total")
-            total_fps = sum(_to_int(v) for v in fps_df.loc[mask, FPS_COUNT_COL])
-        else:
-            row = fps_df[fps_df[FPS_DISTRICT_COL] == csv_district_name]
-            if not row.empty:
-                total_fps = _to_int(row.iloc[0][FPS_COUNT_COL])
+try:
+    rc_df = load_csv(RC_CSV_PATH)
+except Exception as e:
+    st.error(f"Could not load {RC_CSV_PATH}: {e}")
 
-    # RC side
-    if rc_df is not None and RC_DISTRICT_COL in rc_df.columns and RC_COUNT_COL in rc_df.columns:
-        if csv_district_name is None:
-            mask = ~rc_df[RC_DISTRICT_COL].astype(str).str.startswith("Total")
-            total_rc = sum(_to_int(v) for v in rc_df.loc[mask, RC_COUNT_COL])
-        else:
-            row = rc_df[rc_df[RC_DISTRICT_COL] == csv_district_name]
-            if not row.empty:
-                total_rc = _to_int(row.iloc[0][RC_COUNT_COL])
+try:
+    sale_dist_df = load_xls(SALE_DIST_XLS_PATH)
+except Exception as e:
+    st.error(f"Could not load {SALE_DIST_XLS_PATH}: {e}")
 
-    return total_fps, total_rc
+try:
+    nfsa_date_df = load_xls(NFSA_DATE_ABSTRACT_XLS_PATH)
+except Exception as e:
+    st.error(f"Could not load {NFSA_DATE_ABSTRACT_XLS_PATH}: {e}")
 
+try:
+    scheme_sale_df = load_xls(SCHEME_SALE_ALLOT_XLS_PATH)
+except Exception as e:
+    st.error(f"Could not load {SCHEME_SALE_ALLOT_XLS_PATH}: {e}")
 
-# ---------- SIDEBAR: GLOBAL INPUTS ----------
-st.sidebar.header("Simulation Controls")
+# Optional district geo file
+district_geo_df = load_district_lat_long(DISTRICT_LAT_LONG_CSV)
 
-district_label = st.sidebar.selectbox(
-    "Select District",
-    list(DISTRICT_MAPPING.keys())
-)
-csv_district_name = DISTRICT_MAPPING[district_label]
-
-leakage_dev = st.sidebar.slider(
-    "Avg Truck Route Deviation (%)", 0, 50, 8
-)
-ghost_pct = st.sidebar.slider(
-    "Ghost Beneficiaries (%)", 0, 20, 4
-)
-fps_uptime = st.sidebar.slider(
-    "FPS Uptime (%)", 60, 100, 92
-)
-dbt_anomalies = st.sidebar.slider(
-    "Unusual DBT Transactions (per 10k)", 0, 500, 90
-)
-quality_level = st.sidebar.selectbox(
-    "Grain Quality Status",
-    ["Good", "Mixed", "Adulterated"]
-)
-
-st.sidebar.markdown("---")
-st.sidebar.caption(
-    "Risk scores below are simulated for PoC demo. "
-    "CSVs are used only for FPS/RC aggregate counts."
-)
-
-total_fps, total_rc = get_totals_for_selection(csv_district_name)
-
-# ---------- TOP KPI CARDS (SIMULATED AI KPIs) ----------
-leakage_index = round(leakage_dev * 1.5, 1)
-ghost_loss = ghost_pct * 3   # in ₹ Crore
-quality_score = 95 if quality_level == "Good" else (78 if quality_level == "Mixed" else 60)
-fraud_risk = round(dbt_anomalies / 5, 1)
-fiscal_savings = max(
-    0,
-    round(750 - (leakage_index + ghost_loss + (100 - quality_score) + fraud_risk), 1)
-)
-
-col1, col2, col3, col4, col5 = st.columns(5)
-
-col1.metric("Leakage Index", leakage_index, f"{leakage_dev}% deviation")
-col2.metric("Ghost Beneficiary Loss (₹ Cr)", ghost_loss, f"{ghost_pct}% ghost")
-col3.metric("Quality Score", quality_score, quality_level)
-col4.metric("DBT Fraud Risk Score", fraud_risk, f"{dbt_anomalies} alerts/10k")
-col5.metric("Estimated Annual Savings (₹ Cr)", fiscal_savings, "Simulated")
-
-# ---------- REAL DATA SNAPSHOT FROM CSV ----------
-st.markdown("#### Real Data Snapshot (from latest FPS / RC reports)")
-
-colr1, colr2, colr3 = st.columns(3)
-
-if total_fps is not None and total_rc is not None:
-    colr1.metric(
-        "Total FPS in Selection",
-        f"{total_fps:,}" if isinstance(total_fps, int) else str(total_fps)
-    )
-    colr2.metric(
-        "Total Ration Cards",
-        f"{total_rc:,}" if isinstance(total_rc, int) else str(total_rc)
-    )
-    colr3.metric(
-        "Avg Cards per FPS",
-        f"{round(total_rc / total_fps, 1) if total_fps not in (None, 0) else '-'}"
-    )
-else:
-    colr1.write(
-        "ℹ️ FPS/RC CSVs not loaded or matching columns not found. "
-        "Check file paths and column names in the app."
-    )
-
-st.markdown("---")
-
-# ---------- TABS FOR DIFFERENT MODULES ----------
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Overview Dashboard",
-    "Leakage & Movement",
-    "Ghost Beneficiaries",
-    "Field Staff & FPS",
-    "DBT Fraud Analytics",
-    "AI Chatbot"
+# -----------------------------------
+# TABS
+# -----------------------------------
+tabs = st.tabs([
+    "Overview",
+    "District-wise FPS / RC & Join",
+    "NFSA Date Abstract",
+    "Sale Distribution",
+    "Scheme-wise Allotment vs Sale",
+    "Heatmaps & Map",
+    "AI Insights (Demo)",
+    "Raw Data Explorer"
 ])
 
-# ---------- TAB 1: OVERVIEW ----------
-with tab1:
-    st.subheader(f"State Overview - {district_label}")
+# -----------------------------------
+# TAB 1: OVERVIEW
+# -----------------------------------
+with tabs[0]:
+    st.subheader("High-level Snapshot & KPIs")
 
-    col_a, col_b = st.columns([2, 1])
+    col1, col2, col3, col4 = st.columns(4)
 
-    with col_a:
-        st.markdown("#### Trend of Risk Scores (Simulated)")
-        trend_df = pd.DataFrame({
-            "Month": ["Apr", "May", "Jun", "Jul", "Aug", "Sep"],
-            "Leakage Index": [
-                40,
-                38,
-                35,
-                leakage_index + 2,
-                leakage_index,
-                max(leakage_index - 3, 10),
-            ],
-            "Fraud Risk": [
-                30,
-                28,
-                25,
-                fraud_risk + 3,
-                fraud_risk,
-                max(fraud_risk - 4, 5),
-            ],
-        }).set_index("Month")
-        st.line_chart(trend_df)
+    fps_rows = len(fps_df) if fps_df is not None else 0
+    rc_rows = len(rc_df) if rc_df is not None else 0
+    sale_rows = len(sale_dist_df) if sale_dist_df is not None else 0
+    scheme_rows = len(scheme_sale_df) if scheme_sale_df is not None else 0
 
-    with col_b:
-        st.markdown("#### Quick Health Snapshot")
-        st.progress(fps_uptime / 100.0)
-        st.write(f"FPS Uptime: **{fps_uptime}%**")
+    with col1:
+        st.metric("FPS rows (district-wise file)", value=fps_rows if fps_rows else "N/A")
+    with col2:
+        st.metric("RC rows (district-wise file)", value=rc_rows if rc_rows else "N/A")
+    with col3:
+        st.metric("NFSA Date Abstract rows", value=len(nfsa_date_df) if nfsa_date_df is not None else "N/A")
+    with col4:
+        st.metric("Scheme-wise Allotment/Sale rows", value=scheme_rows if scheme_rows else "N/A")
 
-        if leakage_index > 50:
-            st.error("High Leakage Risk Detected in Supply Chain")
-        elif leakage_index > 30:
-            st.warning("Moderate Leakage Risk – Needs Monitoring")
+    st.markdown("---")
+    st.markdown("""
+    **How to use this PoC:**
+    - **District-wise FPS / RC & Join**: See core structural data and join on district codes.
+    - **NFSA Date Abstract**: Date-wise analytics with quick charting.
+    - **Sale Distribution**: Group & plot sales by district/scheme/FPS.
+    - **Scheme-wise Allotment vs Sale**: Compare Allotment vs Sale for November 2025.
+    - **Heatmaps & Map**: Table heatmaps and optional geo map (if district lat/long is provided).
+    - **AI Insights (Demo)**: Rule-based 'AI-style' summaries & anomaly detection.
+    - **Raw Data Explorer**: Inspect any dataset quickly.
+    """)
+
+    # Example simple KPI: if scheme_sale_df has obvious numeric columns
+    if scheme_sale_df is not None:
+        st.markdown("#### Quick KPI Guess (from Scheme-wise Allotment vs Sale)")
+        num_cols = scheme_sale_df.select_dtypes(include=[np.number]).columns.tolist()
+        if len(num_cols) >= 2:
+            allot_guess = num_cols[0]
+            sale_guess = num_cols[1]
+            total_allot = scheme_sale_df[allot_guess].sum()
+            total_sale = scheme_sale_df[sale_guess].sum()
+            coverage = (total_sale / total_allot * 100) if total_allot else None
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Total Allotment (guessed)", value=f"{total_allot:,.0f}")
+            with c2:
+                st.metric("Total Sale (guessed)", value=f"{total_sale:,.0f}")
+            with c3:
+                st.metric("Sale vs Allotment (%)", value=f"{coverage:.1f}%" if coverage is not None else "N/A")
         else:
-            st.success("Leakage Under Control")
+            st.info("Once we know exact allotment/sale columns, KPIs can be made more precise.")
 
-        if fraud_risk > 60:
-            st.error("DBT Fraud Risk is CRITICAL")
-        elif fraud_risk > 30:
-            st.warning("DBT Fraud Risk is ELEVATED")
-        else:
-            st.success("DBT Fraud Risk is NORMAL")
+# -----------------------------------
+# TAB 2: DISTRICT-WISE FPS / RC + JOIN
+# -----------------------------------
+with tabs[1]:
+    st.subheader("District-wise FPS & Ration Card Summary + Join")
 
-    st.markdown("#### AI Alert Feed (Simulated)")
-    st.write("- 🚨 **Truck diversion suspected** on Route VJA-123 (off-route by 12 km).")
-    st.write("- ⚠️ **5,432 ghost cards** flagged in last monthly Aadhaar sync.")
-    st.write("- 🚨 **DBT burst pattern** detected in Tirupati cluster (₹1.2 Cr risk).")
-    st.write("- ✅ **Quality checks cleared** for latest FCI shipment to Visakhapatnam.")
-
-    st.markdown("#### What this PoC represents in the full AI solution")
-    with st.expander("Click to expand explanation for Minister / IAS"):
-        st.markdown(
-            "- This PoC demonstrates five AI modules: Leakage detection, Ghost beneficiary cleanup, "
-            "FPS/field staff monitoring, DBT fraud analytics, and quality checks.\n"
-            "- In production, it would run on live data from AePDS, ePoS, DBT systems, GPS and warehouse "
-            "systems instead of simulated sliders.\n"
-            "- The goal is to reduce losses from leakage, ineligible beneficiaries and fraud, and to improve "
-            "reliability and transparency in the PDS."
-        )
-
-    st.markdown("#### District Data from CSV (if available)")
-    if (
-        fps_df is not None
-        and FPS_DISTRICT_COL in fps_df.columns
-        and rc_df is not None
-        and RC_DISTRICT_COL in rc_df.columns
-    ):
-        if csv_district_name is None:
-            st.write("Showing first few rows of FPS report:")
-            st.dataframe(fps_df.head())
-            st.write("Showing first few rows of RC report:")
-            st.dataframe(rc_df.head())
-        else:
-            st.write("FPS Snapshot for selected district:")
-            st.dataframe(fps_df[fps_df[FPS_DISTRICT_COL] == csv_district_name])
-            st.write("Ration Card Snapshot for selected district:")
-            st.dataframe(rc_df[rc_df[RC_DISTRICT_COL] == csv_district_name])
+    if fps_df is not None:
+        st.markdown("#### FPS (from FPSReportDistrictWiseAsPerLatestRecord.csv)")
+        st.dataframe(fps_df, use_container_width=True)
     else:
-        st.info(
-            "FPS/RC CSVs not loaded or district columns not found. "
-            "Check file paths and column names at the top of app.py."
-        )
+        st.warning("FPS CSV not loaded.")
 
-# ---------- TAB 2: LEAKAGE & MOVEMENT ----------
-with tab2:
-    st.subheader("AI Module: Supply Chain Leakage Anomaly Detection")
+    st.markdown("---")
 
-    col_l1, col_l2 = st.columns(2)
+    if rc_df is not None:
+        st.markdown("#### Ration Cards (from RCReportDistrictWise.csv)")
+        st.dataframe(rc_df, use_container_width=True)
+    else:
+        st.warning("RC CSV not loaded.")
 
-    with col_l1:
-        st.markdown("##### Route Deviation vs Alert Level")
-        route_df = pd.DataFrame({
-            "Route Deviation (%)": [0, 5, 10, 15, 20, leakage_dev],
-            "Alert Score": [0, 10, 30, 50, 70, leakage_index],
-        })
-        st.bar_chart(route_df, x="Route Deviation (%)", y="Alert Score")
+    st.markdown("---")
+    st.markdown("### Auto-join FPS & RC on District Columns")
 
-    with col_l2:
-        st.markdown("##### Sample Route Alert")
-        st.write(f"**District:** {district_label}")
-        st.write("**Route ID:** MD-204")
-        st.write(f"**Deviation Detected:** {leakage_dev}%")
-        st.write(f"**AI Leakage Index:** {leakage_index}")
-
-        if leakage_index > 50:
-            st.error(
-                "Action Recommended: Immediately contact Enforcement Cell "
-                "and freeze FPS withdrawals."
+    if fps_df is not None and rc_df is not None:
+        col_join1, col_join2 = st.columns(2)
+        with col_join1:
+            fps_join_col = st.selectbox(
+                "FPS district column",
+                fps_df.columns.tolist()
             )
-        else:
-            st.info("Action: Monitor this route and schedule surprise inspection.")
+        with col_join2:
+            rc_join_col = st.selectbox(
+                "RC district column",
+                rc_df.columns.tolist()
+            )
 
-# ---------- TAB 3: GHOST BENEFICIARIES ----------
-with tab3:
-    st.subheader("AI Module: Ghost Beneficiary Cleanup")
+        if st.button("Join FPS & RC"):
+            joined_df = join_on_columns(fps_df, rc_df, fps_join_col, rc_join_col)
+            st.success(f"Joined dataframe has {len(joined_df)} rows.")
+            st.dataframe(joined_df.head(100), use_container_width=True)
 
-    col_g1, col_g2 = st.columns(2)
+            st.markdown("You can build more KPIs on this join (e.g., FPS per 1000 ration cards).")
+    else:
+        st.info("Need both FPS and RC datasets loaded to perform join.")
 
-    with col_g1:
-        st.markdown("##### Ghost % vs Fiscal Loss (Simulated)")
-        ghost_df = pd.DataFrame({
-            "Ghost %": list(range(0, 21, 5)) + [ghost_pct],
-            "Loss (₹ Cr)": [x * 3 for x in range(0, 21, 5)] + [ghost_loss],
-        })
-        st.area_chart(ghost_df, x="Ghost %", y="Loss (₹ Cr)")
+# -----------------------------------
+# TAB 3: NFSA DATE ABSTRACT
+# -----------------------------------
+with tabs[2]:
+    st.subheader("NFSA Date-wise Abstract")
 
-    with col_g2:
-        st.markdown("##### Current Cleanup Simulation")
-        st.write(f"Ghost Cards: **{ghost_pct}%**")
-        st.write(f"Estimated Loss: **₹{ghost_loss} Cr**")
-        st.success(
-            f"AI Cleanup Savings (~70%): **₹{round(ghost_loss * 0.7, 1)} Cr/year**"
+    if nfsa_date_df is not None:
+        st.markdown("Raw table from **NFSA_Date_Abstract.xls** (first 100 rows).")
+        st.dataframe(nfsa_date_df.head(100), use_container_width=True)
+
+        st.markdown("#### Quick Chart (you choose Date & Quantity columns)")
+        date_col = st.selectbox(
+            "Select Date column:",
+            nfsa_date_df.columns.tolist()
+        )
+        value_col = st.selectbox(
+            "Select Quantity / Value column:",
+            nfsa_date_df.columns.tolist()
         )
 
-# ---------- TAB 4: FIELD STAFF & FPS ----------
-with tab4:
-    st.subheader("AI Module: Field Staff Tracking & FPS Monitoring")
+        chart_btn = st.button("Plot Date-wise Trend")
 
-    visits_completed = int(fps_uptime / 5)
-    visits_planned = 25
+        if chart_btn:
+            tmp = nfsa_date_df[[date_col, value_col]].copy()
+            tmp[date_col] = pd.to_datetime(tmp[date_col], errors="coerce")
+            tmp[value_col] = safe_numeric(tmp[value_col])
+            tmp = tmp.dropna().sort_values(date_col)
 
-    col_f1, col_f2 = st.columns(2)
+            if not tmp.empty:
+                st.line_chart(tmp.set_index(date_col)[value_col])
+            else:
+                st.warning("No valid data to plot after cleaning.")
+    else:
+        st.warning("NFSA_Date_Abstract.xls not loaded.")
 
-    with col_f1:
-        st.markdown("##### Inspector Visit Compliance (Simulated)")
-        st.metric("Visits Completed", f"{visits_completed}", f"out of {visits_planned}")
-        st.metric(
-            "Compliance Rate",
-            f"{int((visits_completed / visits_planned) * 100)}%",
-        )
+# -----------------------------------
+# TAB 4: SALE DISTRIBUTION
+# -----------------------------------
+with tabs[3]:
+    st.subheader("Sale Distribution (from sale_dist.xls)")
 
-    with col_f2:
-        st.markdown("##### Simple Visit Log (Demo)")
-        inspector_name = st.text_input("Inspector Name", "Ravi Kumar")
-        fps_code = st.text_input("FPS Code", "FPS-1039")
-        issue_flag = st.selectbox(
-            "Any Issue Observed?",
-            ["No Issue", "Stock Mismatch", "Device Offline", "Suspected Diversion"],
-        )
+    if sale_dist_df is not None:
+        st.markdown("Raw view (first 100 rows):")
+        st.dataframe(sale_dist_df.head(100), use_container_width=True)
 
-        if st.button("Submit Visit Log (Simulated)"):
-            st.success(f"Visit recorded for {fps_code}. Issue: {issue_flag}")
+        st.markdown("#### Aggregate & Plot")
+        col_options = sale_dist_df.columns.tolist()
 
-# ---------- TAB 5: DBT FRAUD ANALYTICS ----------
-with tab5:
-    st.subheader("AI Module: DBT Fraud Analytics")
+        group_col = st.selectbox("Group by column (e.g., District / Scheme / FPS):", col_options, key="sale_group")
+        value_col = st.selectbox("Value column (e.g., Sale Qty / Amount):", col_options, key="sale_value")
 
-    col_d1, col_d2 = st.columns(2)
+        plot_btn = st.button("Plot Aggregated Sale Distribution")
 
-    with col_d1:
-        st.markdown("##### DBT Anomalies vs Risk Score (Simulated)")
-        fraud_df = pd.DataFrame({
-            "Anomalies per 10k txns": [0, 50, 100, 200, 300, dbt_anomalies],
-            "Risk Score": [0, 20, 40, 60, 80, fraud_risk],
-        })
-        st.line_chart(fraud_df, x="Anomalies per 10k txns", y="Risk Score")
+        if plot_btn:
+            tmp = sale_dist_df[[group_col, value_col]].copy()
+            tmp[value_col] = safe_numeric(tmp[value_col])
+            agg = (
+                tmp.groupby(group_col)[value_col]
+                .sum()
+                .sort_values(ascending=False)
+                .head(20)
+            )
 
-    with col_d2:
-        st.markdown("##### Sample Fraud Case (Simulated)")
-        st.write("**Scheme:** Rice Subsidy DBT")
-        st.write("**Beneficiary ID:** BEN-98234")
-        st.write("**Pattern:** Multiple withdrawals in 3 districts within 24 hours")
-        st.write(f"**Risk Score:** {fraud_risk}")
+            if not agg.empty:
+                st.bar_chart(agg)
+            else:
+                st.warning("No numeric data available to plot.")
+    else:
+        st.warning("sale_dist.xls not loaded.")
 
-        if fraud_risk > 60:
-            st.error("Action: AUTO-FREEZE payment & alert Audit Dept.")
-        elif fraud_risk > 30:
-            st.warning("Action: Send for manual review.")
-        else:
-            st.info("Action: Log only, no intervention.")
+# -----------------------------------
+# TAB 5: SCHEME-WISE ALLOTMENT VS SALE
+# -----------------------------------
+with tabs[4]:
+    st.subheader("Scheme-wise Allotment vs Sale (Nov 2025)")
 
-# ---------- TAB 6: SIMPLE DEMO CHATBOT ----------
-with tab6:
-    st.subheader("AI Assistant (Demo)")
+    if scheme_sale_df is not None:
+        st.markdown("Raw view (first 100 rows) from **Scheme_Wise_Sale_Allotment_11_2025.xls**:")
+        st.dataframe(scheme_sale_df.head(100), use_container_width=True)
 
-    if st.button("🗑️ Clear Chat History"):
-        st.session_state.chat_history = []
+        col_options = scheme_sale_df.columns.tolist()
 
-    st.markdown(
-        "Ask questions about the Civil Supplies AI Command Centre, PDS leakages, "
-        "DBT fraud detection, or how this PoC works. "
-        "This is a simulated chatbot with prepared answers for the demo."
+        scheme_col = st.selectbox("Scheme column:", col_options, key="scheme_col")
+        allot_col = st.selectbox("Allotment column:", col_options, key="allot_col")
+        sale_col = st.selectbox("Sale column:", col_options, key="sale_col")
+
+        plot_scheme_btn = st.button("Plot Scheme-wise Allotment vs Sale")
+
+        if plot_scheme_btn:
+            tmp = scheme_sale_df[[scheme_col, allot_col, sale_col]].copy()
+
+            tmp[allot_col] = safe_numeric(tmp[allot_col])
+            tmp[sale_col] = safe_numeric(tmp[sale_col])
+
+            agg = (
+                tmp.groupby(scheme_col)[[allot_col, sale_col]]
+                .sum()
+                .sort_values(by=sale_col, ascending=False)
+            )
+
+            if not agg.empty:
+                st.bar_chart(agg)
+            else:
+                st.warning("No numeric data available to plot.")
+    else:
+        st.warning("Scheme_Wise_Sale_Allotment_11_2025.xls not loaded.")
+
+# -----------------------------------
+# TAB 6: HEATMAPS & MAP
+# -----------------------------------
+with tabs[5]:
+    st.subheader("Heatmaps & Optional Map View")
+
+    st.markdown("### Table Heatmap (any numeric metric by district/scheme)")
+
+    source_choice = st.selectbox(
+        "Choose dataset for heatmap:",
+        ["None",
+         "FPS CSV",
+         "RC CSV",
+         "Sale Dist XLS",
+         "Scheme-wise Sale/Allot XLS"]
     )
 
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+    df_for_heatmap = None
+    if source_choice == "FPS CSV" and fps_df is not None:
+        df_for_heatmap = fps_df
+    elif source_choice == "RC CSV" and rc_df is not None:
+        df_for_heatmap = rc_df
+    elif source_choice == "Sale Dist XLS" and sale_dist_df is not None:
+        df_for_heatmap = sale_dist_df
+    elif source_choice == "Scheme-wise Sale/Allot XLS" and scheme_sale_df is not None:
+        df_for_heatmap = scheme_sale_df
 
-    for role, msg in st.session_state.chat_history:
-        with st.chat_message(role):
-            st.write(msg)
+    if df_for_heatmap is not None:
+        st.markdown("Raw (first 50 rows):")
+        st.dataframe(df_for_heatmap.head(50), use_container_width=True)
 
-    user_input = st.chat_input("Ask something about the Civil Supplies AI system...")
+        cols = df_for_heatmap.columns.tolist()
+        dim_col = st.selectbox("Dimension column (e.g., District / Scheme):", cols, key="heat_dim")
+        val_col = st.selectbox("Numeric column for heat:", cols, key="heat_val")
 
-    if user_input:
-        st.session_state.chat_history.append(("user", user_input))
-        with st.chat_message("user"):
-            st.write(user_input)
+        heat_btn = st.button("Build Heatmap Table")
 
-        query = user_input.lower()
+        if heat_btn:
+            tmp = df_for_heatmap[[dim_col, val_col]].copy()
+            tmp[val_col] = safe_numeric(tmp[val_col])
+            agg = tmp.groupby(dim_col)[val_col].sum().reset_index()
 
-        if "what is this" in query or "what does this system do" in query or "explain this" in query:
-            answer = (
-                "This system is a Proof of Concept for an AI-enabled Civil Supplies Command Centre. "
-                "It shows how data from AePDS, ePoS, DBT, FPS inspections and quality checks can be combined into one dashboard "
-                "so that leakages, ghost beneficiaries and fraud can be detected early and acted on."
-            )
-        elif "minister" in query or "ias" in query or "secretary" in query:
-            answer = (
-                "For the Minister and senior IAS officers, this dashboard gives a top-down view: key KPIs like leakage index, "
-                "ghost beneficiary loss, DBT fraud risk, FPS uptime and estimated savings. "
-                "They can quickly see which districts are healthy, which are at risk and what actions the system recommends."
-            )
-        elif "leakage" in query or "diversion" in query or "truck" in query or "route" in query:
-            answer = (
-                "Leakage is detected by monitoring truck GPS routes, stock movement and FPS withdrawals. "
-                "If a truck goes off its normal route or the stock issued at FPS does not match what was dispatched, "
-                "the AI raises a leakage alert with a risk score for that route or FPS."
-            )
-        elif "ghost" in query or "beneficiary" in query or "duplicate" in query:
-            answer = (
-                "Ghost beneficiaries are identified using Aadhaar deduplication, inactivity checks and cross-district pattern analysis. "
-                "The system looks for cards that are not used for many months, cards linked to the same Aadhaar or address, "
-                "and suspicious claims across multiple locations."
-            )
-        elif "dbt" in query or "fraud" in query or "payment" in query or "transaction" in query:
-            answer = (
-                "DBT fraud is detected by analysing transaction patterns. The system flags unusual withdrawal bursts, "
-                "multiple withdrawals from different locations for the same beneficiary and amounts that do not match typical behaviour. "
-                "High-risk cases can be auto-frozen or sent for audit."
-            )
-        elif "quality" in query or "grain" in query or "fci" in query or "warehouse" in query:
-            answer = (
-                "Grain quality is monitored using image-based inspection and simple IoT inputs from warehouses. "
-                "If colour, texture or moisture levels look abnormal, AI can flag a batch for manual inspection before it reaches beneficiaries."
-            )
-        elif "savings" in query or "money" in query or "roi" in query or "benefit" in query:
-            answer = (
-                "The PoC demonstrates how AI can reduce losses from leakage, ghost cards and fraud. "
-                "By acting on these alerts, the department can save a significant portion of recurring losses each year, "
-                "while improving reliability and trust in the PDS system."
-            )
-        elif "data" in query or "source" in query or "where does data come" in query:
-            answer = (
-                "In the real system, the data would come from AePDS, ePoS devices, DBT payment systems, GPS trackers and warehouse systems. "
-                "In this PoC, all risk scores are simulated to show the behaviour without using any real beneficiary data."
-            )
-        elif "implementation" in query or "how will this be implemented" in query or "next steps" in query:
-            answer = (
-                "This PoC is the first step. Once approved, the next phases would include connecting to real data sources via APIs, "
-                "fine-tuning AI models on Andhra Pradesh data and rolling out the dashboards in pilot districts before statewide scaling."
-            )
-        elif "dashboard" in query or "screen" in query or "tab" in query:
-            answer = (
-                "The dashboard is organised into tabs: an overview for leadership and separate views for leakage, ghost beneficiaries, "
-                "field staff/FPS monitoring and DBT fraud analytics. Each tab shows KPIs, trends and example alerts to demonstrate how AI supports decisions."
-            )
+            # Style as heatmap using dataframe styles
+            heat_df = agg.set_index(dim_col)
+            styled = heat_df.style.background_gradient()
+            st.dataframe(styled, use_container_width=True)
+    elif source_choice != "None":
+        st.warning("Selected dataset not loaded or empty.")
+
+    st.markdown("---")
+    st.markdown("### Map View (optional, if district_lat_long.csv is present)")
+
+    if district_geo_df is not None:
+        st.info("Using district_lat_long.csv to plot map. Expecting columns: district, lat, lon")
+        st.dataframe(district_geo_df.head(), use_container_width=True)
+
+        if df_for_heatmap is not None:
+            # Try to join district_geo_df.district with df_for_heatmap[dim_col]
+            try:
+                join_df = df_for_heatmap.copy()
+                join_df[val_col] = safe_numeric(join_df[val_col])
+                agg = join_df.groupby(dim_col)[val_col].sum().reset_index()
+
+                geo_join = agg.merge(
+                    district_geo_df,
+                    left_on=dim_col,
+                    right_on="district",
+                    how="inner"
+                )
+
+                if not geo_join.empty:
+                    st.map(
+                        geo_join[["lat", "lon"]],
+                    )
+                else:
+                    st.warning("No matching districts found between data and geo file.")
+            except Exception as e:
+                st.warning(f"Could not build geo-join for map: {e}")
         else:
-            answer = (
-                "This PoC chatbot is using prepared answers, not a live AI model. "
-                "In simple terms, the system is designed to reduce leakage, clean up beneficiary data, detect DBT fraud and improve FPS performance "
-                "using AI-driven analytics. You can ask about leakage, ghost beneficiaries, DBT fraud, grain quality, data sources "
-                "or how this helps the Minister."
-            )
+            st.info("Select a dataset and build a heatmap first to use map.")
+    else:
+        st.info("district_lat_long.csv not found. Add it in the folder if you want geo maps.")
 
-        st.session_state.chat_history.append(("assistant", answer))
-        with st.chat_message("assistant"):
-            st.write(answer)
+# -----------------------------------
+# TAB 7: AI INSIGHTS (DEMO)
+# -----------------------------------
+with tabs[6]:
+    st.subheader("AI Insights (Rule-based Demo – No External API)")
+
+    st.markdown("""
+    This tab gives **automatic textual insights** based on simple rules:
+    - Finds top & bottom districts/schemes by a selected metric.
+    - Highlights basic anomalies using z-scores.
+    - Summarises patterns in a narrative format.
+    """)
+
+    source_choice_ai = st.selectbox(
+        "Choose dataset for AI-style summary:",
+        ["None",
+         "FPS CSV",
+         "RC CSV",
+         "Sale Dist XLS",
+         "Scheme-wise Sale/Allot XLS",
+         "NFSA Date Abstract XLS"]
+    )
+
+    df_ai = None
+    if source_choice_ai == "FPS CSV" and fps_df is not None:
+        df_ai = fps_df
+    elif source_choice_ai == "RC CSV" and rc_df is not None:
+        df_ai = rc_df
+    elif source_choice_ai == "Sale Dist XLS" and sale_dist_df is not None:
+        df_ai = sale_dist_df
+    elif source_choice_ai == "Scheme-wise Sale/Allot XLS" and scheme_sale_df is not None:
+        df_ai = scheme_sale_df
+    elif source_choice_ai == "NFSA Date Abstract XLS" and nfsa_date_df is not None:
+        df_ai = nfsa_date_df
+
+    if df_ai is not None:
+        cols = df_ai.columns.tolist()
+        dim_col_ai = st.selectbox("Dimension column (District / Scheme / FPS):", cols, key="ai_dim")
+        val_col_ai = st.selectbox("Numeric column (Qty / Count / Amount):", cols, key="ai_val")
+
+        if st.button("Generate AI-style Insight"):
+            tmp = df_ai[[dim_col_ai, val_col_ai]].copy()
+            tmp[val_col_ai] = safe_numeric(tmp[val_col_ai])
+            agg = tmp.groupby(dim_col_ai)[val_col_ai].sum().reset_index().dropna()
+
+            if agg.empty:
+                st.warning("No numeric data available after cleaning.")
+            else:
+                # Basic stats & anomaly detection via z-score
+                values = agg[val_col_ai]
+                mean_val = values.mean()
+                median_val = values.median()
+                std_val = values.std(ddof=0)
+
+                agg["z_score"] = (agg[val_col_ai] - mean_val) / (std_val if std_val else 1)
+                top = agg.sort_values(val_col_ai, ascending=False).head(5)
+                bottom = agg.sort_values(val_col_ai, ascending=True).head(5)
+                high_anom = agg[agg["z_score"] > 2].sort_values("z_score", ascending=False)
+                low_anom = agg[agg["z_score"] < -2].sort_values("z_score", ascending=True)
+
+                st.markdown("#### Quick Numeric Snapshot")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("Mean", f"{mean_val:,.2f}")
+                with c2:
+                    st.metric("Median", f"{median_val:,.2f}")
+                with c3:
+                    st.metric("Std Dev", f"{std_val:,.2f}")
+
+                st.markdown("#### Top 5 by value")
+                st.dataframe(top[[dim_col_ai, val_col_ai]], use_container_width=True)
+
+                st.markdown("#### Bottom 5 by value")
+                st.dataframe(bottom[[dim_col_ai, val_col_ai]], use_container_width=True)
+
+                st.markdown("#### Detected Anomalies (z-score > 2 or < -2)")
+                if not high_anom.empty or not low_anom.empty:
+                    if not high_anom.empty:
+                        st.write("**High positive anomalies (unusually high values):**")
+                        st.dataframe(high_anom[[dim_col_ai, val_col_ai, "z_score"]], use_container_width=True)
+                    if not low_anom.empty:
+                        st.write("**High negative anomalies (unusually low values):**")
+                        st.dataframe(low_anom[[dim_col_ai, val_col_ai, "z_score"]], use_container_width=True)
+                else:
+                    st.write("No strong anomalies detected on this metric.")
+
+                # AI-style narrative
+                st.markdown("### Narrative Insight (Auto-generated)")
+                narrative = []
+
+                narrative.append(
+                    f"For the selected metric **{val_col_ai}** across **{dim_col_ai}**, "
+                    f"the average value is about **{mean_val:,.0f}**, with a median of **{median_val:,.0f}**."
+                )
+
+                if not top.empty:
+                    top_names = ", ".join(top[dim_col_ai].astype(str).head(3).tolist())
+                    narrative.append(
+                        f"The top-performing segments are **{top_names}**, which together account for a "
+                        f"significant share of the overall volume."
+                    )
+
+                if not bottom.empty:
+                    bottom_names = ", ".join(bottom[dim_col_ai].astype(str).head(3).tolist())
+                    narrative.append(
+                        f"On the lower side, **{bottom_names}** show relatively small values on this metric."
+                    )
+
+                if not high_anom.empty:
+                    an_name = high_anom.iloc[0][dim_col_ai]
+                    an_val = high_anom.iloc[0][val_col_ai]
+                    narrative.append(
+                        f"One particularly high outlier is **{an_name}** with a value of **{an_val:,.0f}**, "
+                        f"which is more than 2 standard deviations above the mean."
+                    )
+
+                if not low_anom.empty:
+                    an_name = low_anom.iloc[0][dim_col_ai]
+                    an_val = low_anom.iloc[0][val_col_ai]
+                    narrative.append(
+                        f"On the lower extreme, **{an_name}** appears as a potential underperformer "
+                        f"with a value of just **{an_val:,.0f}**."
+                    )
+
+                narrative.append(
+                    "At a policy level, you can treat extremely high values as potential concentration or leakage risks "
+                    "and extremely low values as coverage/uptake gaps that require targeted interventions."
+                )
+
+                st.write(" ".join(narrative))
+    else:
+        st.info("Select a dataset above to generate insights.")
+
+# -----------------------------------
+# TAB 8: RAW DATA EXPLORER
+# -----------------------------------
+with tabs[7]:
+    st.subheader("Raw Data Explorer")
+
+    dataset_options = []
+    if fps_df is not None:
+        dataset_options.append("FPS CSV")
+    if rc_df is not None:
+        dataset_options.append("RC CSV")
+    if sale_dist_df is not None:
+        dataset_options.append("Sale Dist XLS")
+    if nfsa_date_df is not None:
+        dataset_options.append("NFSA Date Abstract XLS")
+    if scheme_sale_df is not None:
+        dataset_options.append("Scheme-wise Sale/Allot XLS")
+
+    if not dataset_options:
+        st.warning("No datasets loaded. Check file names and paths.")
+    else:
+        choice = st.selectbox("Choose dataset to view:", dataset_options)
+
+        if choice == "FPS CSV":
+            st.write("**FPSReportDistrictWiseAsPerLatestRecord.csv**")
+            st.dataframe(fps_df, use_container_width=True)
+        elif choice == "RC CSV":
+            st.write("**RCReportDistrictWise.csv**")
+            st.dataframe(rc_df, use_container_width=True)
+        elif choice == "Sale Dist XLS":
+            st.write("**sale_dist.xls**")
+            st.dataframe(sale_dist_df, use_container_width=True)
+        elif choice == "NFSA Date Abstract XLS":
+            st.write("**NFSA_Date_Abstract.xls**")
+            st.dataframe(nfsa_date_df, use_container_width=True)
+        elif choice == "Scheme-wise Sale/Allot XLS":
+            st.write("**Scheme_Wise_Sale_Allotment_11_2025.xls**")
+            st.dataframe(scheme_sale_df, use_container_width=True)
