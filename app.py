@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import os
+from pathlib import Path
 
 # =========================
 # BASIC PAGE SETUP
@@ -23,6 +25,25 @@ RC_CSV_PATH = "RCReportDistrictWise.csv"
 NFSA_CSV_PATH = "NFSA_Date_Abstract.csv"
 SALE_CSV_PATH = "sale_dist.csv"
 SCHEME_CSV_PATH = "Scheme_Wise_Sale_Allotment_11_2025.csv"
+
+# =========================
+# SHOW WHERE STREAMLIT IS RUNNING & IF FILES EXIST
+# =========================
+cwd = os.getcwd()
+st.markdown("#### Debug: File Locations")
+st.write(f"**Current working folder:** `{cwd}`")
+
+for name in [
+    FPS_CSV_PATH,
+    RC_CSV_PATH,
+    NFSA_CSV_PATH,
+    SALE_CSV_PATH,
+    SCHEME_CSV_PATH,
+]:
+    exists = Path(name).exists()
+    st.write(f"- `{name}` exists here? **{exists}**")
+
+st.markdown("---")
 
 # =========================
 # HELPERS
@@ -91,7 +112,7 @@ quality_level = st.sidebar.selectbox(
 st.sidebar.markdown("---")
 st.sidebar.caption(
     "KPIs and risk scores are simulated for PoC demo. "
-    "CSVs are used for real-looking tables and charts."
+    "CSVs are used for tables and charts."
 )
 
 # =========================
