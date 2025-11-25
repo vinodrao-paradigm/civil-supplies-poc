@@ -22,11 +22,12 @@ SCHEME_SALE_ALLOT_XLS_PATH = "Scheme_Wise_Sale_Allotment_11_2025.xls"
 
 # ---------- DATA LOAD HELPERS ----------
 @st.cache_data
-def load_csv(path):
+def load_csv(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 @st.cache_data
-def load_xls(path):
+def load_xls(path: str) -> pd.DataFrame:
+    # For .xls you may still need `pip install xlrd`
     return pd.read_excel(path)
 
 # ---------- LOAD DATA ----------
@@ -98,11 +99,17 @@ with tabs[1]:
 
     if fps_df is not None:
         st.markdown("#### FPS (from FPSReportDistrictWiseAsPerLatestRecord.csv)")
-        st.dataframe(fps_df)
+        st.dataframe(fps_df, use_container_width=True)
+    else:
+        st.warning("FPS CSV not loaded.")
+
+    st.markdown("---")
 
     if rc_df is not None:
         st.markdown("#### Ration Cards (from RCReportDistrictWise.csv)")
-        st.dataframe(rc_df)
+        st.dataframe(rc_df, use_container_width=True)
+    else:
+        st.warning("RC CSV not loaded.")
 
 # ---------- TAB 3: NFSA DATE ABSTRACT ----------
 with tabs[2]:
@@ -110,7 +117,7 @@ with tabs[2]:
 
     if nfsa_date_df is not None:
         st.markdown("Raw table from NFSA_Date_Abstract.xls (first 100 rows).")
-        st.dataframe(nfsa_date_df.head(100))
+        st.dataframe(nfsa_date_df.head(100), use_container_width=True)
 
         date_col = st.selectbox(
             "Select Date column:",
@@ -130,7 +137,10 @@ with tabs[2]:
             )
             tmp = tmp.dropna()
 
-            st.line_chart(tmp.set_index(date_col)[value_col])
+            if not tmp.empty:
+                st.line_chart(tmp.set_index(date_col)[value_col])
+            else:
+                st.warning("No valid data to plot after cleaning.")
     else:
         st.warning("NFSA_Date_Abstract.xls not loaded.")
 
@@ -140,8 +150,86 @@ with tabs[3]:
 
     if sale_dist_df is not None:
         st.markdown("Raw view (first 100 rows):")
-        st.dataframe(sale_dist_df.head(100))
+        st.dataframe(sale_dist_df.head(100), use_container_width=True)
 
         col_options = sale_dist_df.columns.tolist()
 
-        group_col = st.selectbox("Group by colu_
+        group_col = st.selectbox("Group by column:", col_options)
+        value_col = st.selectbox("Value column:", col_options)
+
+        if st.button("Plot Sale Distribution"):
+            tmp = sale_dist_df[[group_col, value_col]].copy()
+            tmp[value_col] = pd.to_numeric(
+                tmp[value_col].astype(str).str.replace(",", ""),
+                errors="coerce"
+            )
+            agg = (
+                tmp.groupby(group_col)[value_col]
+                .sum()
+                .sort_values(ascending=False)
+                .head(20)
+            )
+
+            st.bar_chart(agg)
+    else:
+        st.warning("sale_dist.xls not loaded.")
+
+# ---------- TAB 5: SCHEME-WISE ALLOTMENT VS SALE ----------
+with tabs[4]:
+    st.subheader("Scheme-wise Allotment vs Sale (Nov 2025)")
+
+    if scheme_sale_df is not None:
+        st.markdown("Raw view (first 100 rows):")
+        st.dataframe(scheme_sale_df.head(100), use_container_width=True)
+
+        col_options = scheme_sale_df.columns.tolist()
+        scheme_col = st.selectbox("Scheme column:", col_options)
+        allot_col = st.selectbox("Allotment column:", col_options)
+        sale_col = st.selectbox("Sale column:", col_options)
+
+        if st.button("Plot Allotment vs Sale"):
+            tmp = scheme_sale_df[[scheme_col, allot_col, sale_col]].copy()
+
+            for c in [allot_col, sale_col]:
+                tmp[c] = pd.to_numeric(
+                    tmp[c].astype(str).str.replace(",", ""),
+                    errors="coerce"
+                )
+
+            agg = tmp.groupby(scheme_col)[[allot_col, sale_col]].sum()
+
+            st.bar_chart(agg)
+    else:
+        st.warning("Scheme_Wise_Sale_Allotment_11_2025.xls not loaded.")
+
+# ---------- TAB 6: RAW DATA ----------
+with tabs[5]:
+    st.subheader("Raw Data Explorer")
+
+    dataset_options = []
+    if fps_df is not None:
+        dataset_options.append("FPS CSV")
+    if rc_df is not None:
+        dataset_options.append("RC CSV")
+    if sale_dist_df is not None:
+        dataset_options.append("Sale Dist XLS")
+    if nfsa_date_df is not None:
+        dataset_options.append("NFSA Date Abstract XLS")
+    if scheme_sale_df is not None:
+        dataset_options.append("Scheme-wise Sale/Allot XLS")
+
+    if not dataset_options:
+        st.warning("No datasets loaded. Check file names and paths.")
+    else:
+        choice = st.selectbox("Choose dataset:", dataset_options)
+
+        if choice == "FPS CSV":
+            st.dataframe(fps_df, use_container_width=True)
+        elif choice == "RC CSV":
+            st.dataframe(rc_df, use_container_width=True)
+        elif choice == "Sale Dist XLS":
+            st.dataframe(sale_dist_df, use_container_width=True)
+        elif choice == "NFSA Date Abstract XLS":
+            st.dataframe(nfsa_date_df, use_container_width=True)
+        elif choice == "Scheme-wise Sale/Allot XLS":
+            st.dataframe(scheme_sale_df, use_container_width=True)
