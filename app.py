@@ -48,7 +48,7 @@ st.markdown("---")
 # =========================
 # HELPERS
 # =========================
-@st.cache_data
+
 def load_csv(path: str) -> pd.DataFrame | None:
     try:
         return pd.read_csv(path)
