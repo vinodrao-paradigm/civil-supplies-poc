@@ -1,99 +1,122 @@
 import streamlit as st
 import pandas as pd
 
-# ---------- BASIC PAGE SETUP ----------
+# =========================
+# BASIC PAGE SETUP
+# =========================
 st.set_page_config(
     page_title="Civil Supplies AI Command Centre",
     layout="wide"
 )
 
 st.title("Civil Supplies AI Command Centre (PoC)")
-st.markdown("### Simulated AI-driven Fiscal & PDS Intelligence for Andhra Pradesh")
-st.write("VERSION: CSV + NFSA + Scheme-wise Build")
+st.markdown("### AP Civil Supplies · NFSA · Scheme-wise Analytics (Demo)")
+st.write("VERSION: Clean reset build (CSV + XLS)")
 
 st.markdown("---")
 
-# ---------- FILE PATHS ----------
+# =========================
+# FILE PATHS
+# =========================
+# All files must be in the same folder as this app.py
 FPS_CSV_PATH = "FPSReportDistrictWiseAsPerLatestRecord.csv"
 RC_CSV_PATH = "RCReportDistrictWise.csv"
 SALE_DIST_XLS_PATH = "sale_dist.xls"
 NFSA_DATE_ABSTRACT_XLS_PATH = "NFSA_Date_Abstract.xls"
 SCHEME_SALE_ALLOT_XLS_PATH = "Scheme_Wise_Sale_Allotment_11_2025.xls"
 
-# ---------- DATA LOAD HELPERS ----------
+# =========================
+# HELPERS
+# =========================
 @st.cache_data
 def load_csv(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 @st.cache_data
-def load_xls(path: str) -> pd.DataFrame:
-    # For .xls you may still need `pip install xlrd`
+def load_excel(path: str) -> pd.DataFrame:
+    """
+    Generic Excel loader.
+    For .xls files you may need: pip install xlrd
+    """
     return pd.read_excel(path)
 
-# ---------- LOAD DATA ----------
+def to_numeric(series: pd.Series) -> pd.Series:
+    """Convert a column to numeric, safely (handles commas)."""
+    return pd.to_numeric(
+        series.astype(str).str.replace(",", "", regex=False),
+        errors="coerce"
+    )
+
+# =========================
+# LOAD DATA (WITH ERRORS SHOWN BUT NOT CRASHING)
+# =========================
+fps_df = rc_df = sale_dist_df = nfsa_date_df = scheme_sale_df = None
+
+# FPS
 try:
     fps_df = load_csv(FPS_CSV_PATH)
 except Exception as e:
-    fps_df = None
-    st.error(f"Could not load FPS CSV: {e}")
+    st.error(f"Could not load {FPS_CSV_PATH}: {e}")
 
+# RC
 try:
     rc_df = load_csv(RC_CSV_PATH)
 except Exception as e:
-    rc_df = None
-    st.error(f"Could not load RC CSV: {e}")
+    st.error(f"Could not load {RC_CSV_PATH}: {e}")
 
+# sale_dist.xls
 try:
-    sale_dist_df = load_xls(SALE_DIST_XLS_PATH)
+    sale_dist_df = load_excel(SALE_DIST_XLS_PATH)
 except Exception as e:
-    sale_dist_df = None
-    st.error(f"Could not load sale_dist.xls: {e}")
+    st.error(f"Could not load {SALE_DIST_XLS_PATH}: {e}")
 
+# NFSA_Date_Abstract.xls
 try:
-    nfsa_date_df = load_xls(NFSA_DATE_ABSTRACT_XLS_PATH)
+    nfsa_date_df = load_excel(NFSA_DATE_ABSTRACT_XLS_PATH)
 except Exception as e:
-    nfsa_date_df = None
-    st.error(f"Could not load NFSA_Date_Abstract.xls: {e}")
+    st.error(f"Could not load {NFSA_DATE_ABSTRACT_XLS_PATH}: {e}")
 
+# Scheme_Wise_Sale_Allotment_11_2025.xls
 try:
-    scheme_sale_df = load_xls(SCHEME_SALE_ALLOT_XLS_PATH)
+    scheme_sale_df = load_excel(SCHEME_SALE_ALLOT_XLS_PATH)
 except Exception as e:
-    scheme_sale_df = None
-    st.error(f"Could not load Scheme_Wise_Sale_Allotment_11_2025.xls: {e}")
+    st.error(f"Could not load {SCHEME_SALE_ALLOT_XLS_PATH}: {e}")
 
-# ---------- TABS LAYOUT ----------
+# =========================
+# TABS
+# =========================
 tabs = st.tabs([
     "Overview",
     "District-wise FPS / RC",
     "NFSA Date Abstract",
     "Sale Distribution",
     "Scheme-wise Allotment vs Sale",
-    "Raw Data"
+    "Raw Data Explorer"
 ])
 
-# ---------- TAB 1: OVERVIEW ----------
+# =========================
+# TAB 1: OVERVIEW
+# =========================
 with tabs[0]:
     st.subheader("High-level Snapshot")
 
-    cols = st.columns(4)
+    col1, col2, col3, col4 = st.columns(4)
 
     fps_rows = len(fps_df) if fps_df is not None else 0
     rc_rows = len(rc_df) if rc_df is not None else 0
     sale_rows = len(sale_dist_df) if sale_dist_df is not None else 0
     scheme_rows = len(scheme_sale_df) if scheme_sale_df is not None else 0
 
-    with cols[0]:
-        st.metric("FPS rows", value=fps_rows)
-    with cols[1]:
-        st.metric("RC rows", value=rc_rows)
-    with cols[2]:
-        st.metric("Sale Dist rows", value=sale_rows)
-    with cols[3]:
-        st.metric("Scheme-wise rows", value=scheme_rows)
+    col1.metric("FPS rows (district-wise)", fps_rows)
+    col2.metric("RC rows (district-wise)", rc_rows)
+    col3.metric("Sale Dist rows", sale_rows)
+    col4.metric("Scheme-wise rows", scheme_rows)
 
-    st.info("Use the tabs above to explore each dataset slice for the PoC.")
+    st.info("Use the tabs above to explore each dataset slice in this PoC dashboard.")
 
-# ---------- TAB 2: DISTRICT-WISE FPS / RC ----------
+# =========================
+# TAB 2: DISTRICT-WISE FPS / RC
+# =========================
 with tabs[1]:
     st.subheader("District-wise FPS & Ration Card Summary")
 
@@ -111,7 +134,9 @@ with tabs[1]:
     else:
         st.warning("RC CSV not loaded.")
 
-# ---------- TAB 3: NFSA DATE ABSTRACT ----------
+# =========================
+# TAB 3: NFSA DATE ABSTRACT
+# =========================
 with tabs[2]:
     st.subheader("NFSA Date-wise Abstract")
 
@@ -119,6 +144,7 @@ with tabs[2]:
         st.markdown("Raw table from NFSA_Date_Abstract.xls (first 100 rows).")
         st.dataframe(nfsa_date_df.head(100), use_container_width=True)
 
+        # Let you choose which columns represent Date and Quantity
         date_col = st.selectbox(
             "Select Date column:",
             nfsa_date_df.columns.tolist()
@@ -131,10 +157,7 @@ with tabs[2]:
         if st.button("Plot Date-wise Trend"):
             tmp = nfsa_date_df[[date_col, value_col]].copy()
             tmp[date_col] = pd.to_datetime(tmp[date_col], errors="coerce")
-            tmp[value_col] = pd.to_numeric(
-                tmp[value_col].astype(str).str.replace(",", ""),
-                errors="coerce"
-            )
+            tmp[value_col] = to_numeric(tmp[value_col])
             tmp = tmp.dropna()
 
             if not tmp.empty:
@@ -144,9 +167,11 @@ with tabs[2]:
     else:
         st.warning("NFSA_Date_Abstract.xls not loaded.")
 
-# ---------- TAB 4: SALE DISTRIBUTION ----------
+# =========================
+# TAB 4: SALE DISTRIBUTION
+# =========================
 with tabs[3]:
-    st.subheader("Sale Distribution")
+    st.subheader("Sale Distribution (from sale_dist.xls)")
 
     if sale_dist_df is not None:
         st.markdown("Raw view (first 100 rows):")
@@ -155,14 +180,11 @@ with tabs[3]:
         col_options = sale_dist_df.columns.tolist()
 
         group_col = st.selectbox("Group by column:", col_options)
-        value_col = st.selectbox("Value column:", col_options)
+        value_col = st.selectbox("Value column (amount/qty):", col_options)
 
         if st.button("Plot Sale Distribution"):
             tmp = sale_dist_df[[group_col, value_col]].copy()
-            tmp[value_col] = pd.to_numeric(
-                tmp[value_col].astype(str).str.replace(",", ""),
-                errors="coerce"
-            )
+            tmp[value_col] = to_numeric(tmp[value_col])
             agg = (
                 tmp.groupby(group_col)[value_col]
                 .sum()
@@ -170,16 +192,21 @@ with tabs[3]:
                 .head(20)
             )
 
-            st.bar_chart(agg)
+            if not agg.empty:
+                st.bar_chart(agg)
+            else:
+                st.warning("No numeric data to plot after aggregation.")
     else:
         st.warning("sale_dist.xls not loaded.")
 
-# ---------- TAB 5: SCHEME-WISE ALLOTMENT VS SALE ----------
+# =========================
+# TAB 5: SCHEME-WISE ALLOTMENT VS SALE
+# =========================
 with tabs[4]:
     st.subheader("Scheme-wise Allotment vs Sale (Nov 2025)")
 
     if scheme_sale_df is not None:
-        st.markdown("Raw view (first 100 rows):")
+        st.markdown("Raw view (first 100 rows) from Scheme_Wise_Sale_Allotment_11_2025.xls:")
         st.dataframe(scheme_sale_df.head(100), use_container_width=True)
 
         col_options = scheme_sale_df.columns.tolist()
@@ -190,19 +217,21 @@ with tabs[4]:
         if st.button("Plot Allotment vs Sale"):
             tmp = scheme_sale_df[[scheme_col, allot_col, sale_col]].copy()
 
-            for c in [allot_col, sale_col]:
-                tmp[c] = pd.to_numeric(
-                    tmp[c].astype(str).str.replace(",", ""),
-                    errors="coerce"
-                )
+            tmp[allot_col] = to_numeric(tmp[allot_col])
+            tmp[sale_col] = to_numeric(tmp[sale_col])
 
             agg = tmp.groupby(scheme_col)[[allot_col, sale_col]].sum()
 
-            st.bar_chart(agg)
+            if not agg.empty:
+                st.bar_chart(agg)
+            else:
+                st.warning("No numeric data to plot after aggregation.")
     else:
         st.warning("Scheme_Wise_Sale_Allotment_11_2025.xls not loaded.")
 
-# ---------- TAB 6: RAW DATA ----------
+# =========================
+# TAB 6: RAW DATA EXPLORER
+# =========================
 with tabs[5]:
     st.subheader("Raw Data Explorer")
 
@@ -219,17 +248,22 @@ with tabs[5]:
         dataset_options.append("Scheme-wise Sale/Allot XLS")
 
     if not dataset_options:
-        st.warning("No datasets loaded. Check file names and paths.")
+        st.warning("No datasets loaded. Check that all files are in the same folder as app.py.")
     else:
         choice = st.selectbox("Choose dataset:", dataset_options)
 
         if choice == "FPS CSV":
+            st.write("FPSReportDistrictWiseAsPerLatestRecord.csv")
             st.dataframe(fps_df, use_container_width=True)
         elif choice == "RC CSV":
+            st.write("RCReportDistrictWise.csv")
             st.dataframe(rc_df, use_container_width=True)
         elif choice == "Sale Dist XLS":
+            st.write("sale_dist.xls")
             st.dataframe(sale_dist_df, use_container_width=True)
         elif choice == "NFSA Date Abstract XLS":
+            st.write("NFSA_Date_Abstract.xls")
             st.dataframe(nfsa_date_df, use_container_width=True)
         elif choice == "Scheme-wise Sale/Allot XLS":
+            st.write("Scheme_Wise_Sale_Allotment_11_2025.xls")
             st.dataframe(scheme_sale_df, use_container_width=True)
